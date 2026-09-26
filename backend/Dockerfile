@@ -13,6 +13,4 @@ COPY --from=build /app/publish .
 ENV ASPNETCORE_URLS=http://0.0.0.0:5000
 EXPOSE 5000
 
-VOLUME ["/app/Data", "/app/Drive_Storage"]
-
 ENTRYPOINT ["dotnet", "backend.dll"]
