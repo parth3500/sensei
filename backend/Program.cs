@@ -10,8 +10,9 @@ using Sensei.Endpoints;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure port
-builder.WebHost.UseUrls("http://0.0.0.0:5000");
+// Configure port from environment (Railway/Docker) or default to 5000
+var port = Environment.GetEnvironmentVariable("PORT") ?? "5000";
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
 // Configure JSON serialization (camelCase)
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -19,12 +20,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
 });
 
-// Configure CORS for Next.js frontend
+// Configure CORS for Next.js frontend and production deployments
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:3000", "http://127.0.0.1:3000")
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -32,7 +33,8 @@ builder.Services.AddCors(options =>
 });
 
 // Component Assembly Registration
-string dbPath = Path.Combine(builder.Environment.ContentRootPath, "Data", "sensei.db");
+string dbPath = Environment.GetEnvironmentVariable("DATABASE_PATH")
+    ?? Path.Combine(builder.Environment.ContentRootPath, "Data", "sensei.db");
 builder.Services.AddSingleton<IDatabaseComponent>(_ => new SqliteDatabaseComponent(dbPath));
 builder.Services.AddSingleton<IAuthComponent, AuthComponent>();
 builder.Services.AddSingleton<ISpacedRepetitionComponent, SpacedRepetitionComponent>();
@@ -67,6 +69,6 @@ using (var scope = app.Services.CreateScope())
 // Map Endpoints
 app.MapSenseiEndpoints();
 
-Console.WriteLine("Sensei C# (.NET 8) Web API running on http://0.0.0.0:5000");
+Console.WriteLine($"Sensei C# (.NET 8) Web API running on http://0.0.0.0:{port}");
 
 app.Run();
