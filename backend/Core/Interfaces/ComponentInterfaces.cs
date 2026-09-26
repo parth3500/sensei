@@ -35,7 +35,7 @@ public interface ITaskComponent
 public interface ISpacedRepetitionComponent
 {
     (double NewEase, int NewInterval, int NewReps, string NextDueDate) CalculateNextReview(
-        double currentEase, int currentInterval, int currentReps, bool isCorrect);
+        double currentEase, int currentInterval, int currentReps, bool isCorrect, int confidence = 3);
 }
 
 public interface IPracticeComponent

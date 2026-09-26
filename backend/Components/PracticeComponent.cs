@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using Sensei.Core.Interfaces;
 using Sensei.Core.Models;
 
@@ -46,7 +48,7 @@ public class PracticeComponent : IPracticeComponent
 
         if (dueOnly)
         {
-            sb.Append(" AND sr_due <= DATE('now')");
+            sb.Append(" AND (sr_due IS NULL OR sr_due = '' OR DATE(sr_due) <= DATE('now'))");
         }
 
         if (!string.IsNullOrEmpty(topic))
@@ -79,12 +81,58 @@ public class PracticeComponent : IPracticeComponent
         if (question == null)
             throw new ArgumentException($"Question {questionId} does not exist.");
 
-        // Compare answer (letter or option text match)
-        bool isCorrect = string.Equals(question.Answer.Trim(), request.UserAnswer.Trim(), StringComparison.OrdinalIgnoreCase);
+        // Compare answer (letter, stripped text, or exact match)
+        string expected = question.Answer.Trim();
+        string actual = (request.UserAnswer ?? "").Trim();
+        bool isCorrect = string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
 
-        // Update SM-2 parameters
+        if (!isCorrect)
+        {
+            try
+            {
+                var options = JsonSerializer.Deserialize<List<string>>(question.OptionsJson ?? "[]");
+                if (options != null && options.Count > 0)
+                {
+                    // If expected is A, B, C, D...
+                    if (expected.Length == 1 && char.IsLetter(expected[0]))
+                    {
+                        int idx = char.ToUpperInvariant(expected[0]) - 'A';
+                        if (idx >= 0 && idx < options.Count)
+                        {
+                            if (string.Equals(options[idx].Trim(), actual, StringComparison.OrdinalIgnoreCase))
+                                isCorrect = true;
+                        }
+                    }
+
+                    // If actual is A, B, C, D...
+                    if (!isCorrect && actual.Length == 1 && char.IsLetter(actual[0]))
+                    {
+                        int idx = char.ToUpperInvariant(actual[0]) - 'A';
+                        if (idx >= 0 && idx < options.Count)
+                        {
+                            if (string.Equals(options[idx].Trim(), expected, StringComparison.OrdinalIgnoreCase))
+                                isCorrect = true;
+                        }
+                    }
+
+                    // If option has prefix like "A) " or "1. "
+                    if (!isCorrect)
+                    {
+                        string Clean(string s) => Regex.Replace(s, @"^[A-Da-d0-9][\)\.\:\-]\s*", "").Trim();
+                        if (string.Equals(Clean(expected), Clean(actual), StringComparison.OrdinalIgnoreCase))
+                            isCorrect = true;
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback to strict comparison
+            }
+        }
+
+        // Update SM-2 parameters factoring in user confidence
         var (newEase, newInterval, newReps, nextDueDate) = _sr.CalculateNextReview(
-            question.SrEase, question.SrInterval, question.SrReps, isCorrect);
+            question.SrEase, question.SrInterval, question.SrReps, isCorrect, request.Confidence);
 
         _db.ExecuteNonQuery(@"
             UPDATE questions 

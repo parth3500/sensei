@@ -190,11 +190,12 @@ export default function SenseiApp() {
   const handleSubmitAnswer = async (
     questionId: number,
     answer: string,
-    confidence: number
+    confidence: number,
+    timeSec: number = 15
   ): Promise<boolean> => {
     const attempt = await api.submitAttempt(questionId, {
       userAnswer: answer,
-      timeSec: 15,
+      timeSec,
       confidence,
     });
 

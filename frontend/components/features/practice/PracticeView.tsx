@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { BookOpen, CheckCircle, XCircle, ArrowRight, BrainCircuit, Sparkles, AlertOctagon, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BookOpen, CheckCircle, XCircle, ArrowRight, BrainCircuit, Sparkles, AlertOctagon, RotateCcw, Flame, Timer } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import { Question, ForgettingRiskItem } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -8,9 +9,53 @@ import { Badge } from '@/components/ui/Badge';
 interface PracticeViewProps {
   questions: Question[];
   forgettingRisks?: ForgettingRiskItem[];
-  onSubmitAnswer: (questionId: number, answer: string, confidence: number) => Promise<boolean>;
+  onSubmitAnswer: (questionId: number, answer: string, confidence: number, timeSec?: number) => Promise<boolean>;
   onRefresh: () => Promise<void>;
 }
+
+// Defensive options parser to handle arrays, JSON strings, or line breaks safely
+const parseOptions = (raw: any): string[] => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+      if (typeof parsed === 'string') return [parsed];
+    } catch {
+      // Split newline or semicolon separated fallback
+      const lines = raw.split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean);
+      if (lines.length > 1) return lines;
+    }
+  }
+  return [];
+};
+
+// Check if an option matches the expected answer (letter 'A', option text, or prefix)
+const isAnswerMatch = (opt: string, idx: number, answer?: string): boolean => {
+  if (!answer) return false;
+  const cleanAns = answer.trim().toLowerCase();
+  const cleanOpt = opt.trim().toLowerCase();
+
+  // 1. Direct match
+  if (cleanOpt === cleanAns) return true;
+
+  // 2. Letter match ('A' for index 0, 'B' for index 1, etc.)
+  const letter = String.fromCharCode(65 + idx).toLowerCase();
+  if (cleanAns === letter) return true;
+
+  // 3. Option prefixed with letter "A) ..." matching answer "A" or text
+  if (cleanOpt.startsWith(`${letter})`) || cleanOpt.startsWith(`${letter}.`) || cleanOpt.startsWith(`${letter}:`)) {
+    const strippedOpt = cleanOpt.replace(/^[a-d0-9][\)\.\:\-]\s*/, '').trim();
+    if (strippedOpt === cleanAns || cleanAns === letter) return true;
+  }
+
+  // 4. Answer has letter prefix matching clean option
+  const strippedAns = cleanAns.replace(/^[a-d0-9][\)\.\:\-]\s*/, '').trim();
+  if (strippedAns === cleanOpt) return true;
+
+  return false;
+};
 
 export const PracticeView: React.FC<PracticeViewProps> = ({
   questions,
@@ -25,6 +70,10 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
   const [submitted, setSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  const [startTime, setStartTime] = useState<number>(Date.now());
+  const [elapsedSec, setElapsedSec] = useState<number>(0);
+  const [streak, setStreak] = useState<number>(0);
+  const [bestStreak, setBestStreak] = useState<number>(0);
 
   const activeQuestionList = mode === 'forgetting_risk'
     ? forgettingRisks.map((f) => f.question)
@@ -32,38 +81,78 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
 
   const currentQ = activeQuestionList.length > 0 ? activeQuestionList[currentIndex] : null;
   const currentRisk = mode === 'forgetting_risk' ? forgettingRisks[currentIndex] : null;
-  const options: string[] = currentQ?.optionsJson ? JSON.parse(currentQ.optionsJson) : [];
+  const options: string[] = parseOptions(currentQ?.optionsJson);
+
+  // Reset timer on question change
+  useEffect(() => {
+    setStartTime(Date.now());
+    setElapsedSec(0);
+  }, [currentIndex, mode]);
+
+  // Live timer for question attempt
+  useEffect(() => {
+    if (submitted || !currentQ) return;
+    const interval = setInterval(() => {
+      setElapsedSec(Math.max(1, Math.round((Date.now() - startTime) / 1000)));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startTime, submitted, currentQ]);
 
   const handleSelectOption = (opt: string) => {
     if (submitted) return;
     setSelectedOption(opt);
   };
 
-  const handleSubmit = async () => {
-    if (!currentQ || !selectedOption) return;
+  const handleSubmit = useCallback(async () => {
+    if (!currentQ || !selectedOption || submitted || loading) return;
 
     setLoading(true);
+    const timeSpent = Math.max(1, Math.round((Date.now() - startTime) / 1000));
     try {
-      const correct = await onSubmitAnswer(currentQ.id, selectedOption, confidence);
+      const correct = await onSubmitAnswer(currentQ.id, selectedOption, confidence, timeSpent);
       setIsCorrect(correct);
       setSubmitted(true);
+
+      if (correct) {
+        setStreak((prev) => {
+          const next = prev + 1;
+          setBestStreak((b) => Math.max(b, next));
+          if (next % 3 === 0 || next === 1) {
+            try {
+              confetti({
+                particleCount: 50,
+                spread: 60,
+                origin: { y: 0.7 },
+                colors: ['#7c5cff', '#10b981', '#f59e0b', '#ec4899'],
+              });
+            } catch {
+              // ignore canvas confetti errors if not supported
+            }
+          }
+          return next;
+        });
+      } else {
+        setStreak(0);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentQ, selectedOption, submitted, loading, startTime, onSubmitAnswer, confidence]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     setSelectedOption(null);
     setSubmitted(false);
     setIsCorrect(null);
     setConfidence(3);
+    setStartTime(Date.now());
+    setElapsedSec(0);
     if (currentIndex < activeQuestionList.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
       onRefresh();
       setCurrentIndex(0);
     }
-  };
+  }, [currentIndex, activeQuestionList.length, onRefresh]);
 
   const handleSwitchMode = (newMode: 'standard' | 'forgetting_risk') => {
     setMode(newMode);
@@ -72,14 +161,53 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     setSubmitted(false);
     setIsCorrect(null);
     setConfidence(3);
+    setStartTime(Date.now());
+    setElapsedSec(0);
   };
+
+  // Keyboard shortcut listener (1-4 / A-D to select, Enter to check / next)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if focus is in an input or textarea
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+
+      if (!submitted) {
+        if (['1', '2', '3', '4'].includes(e.key)) {
+          const idx = parseInt(e.key) - 1;
+          if (options[idx]) handleSelectOption(options[idx]);
+        } else if (['a', 'b', 'c', 'd'].includes(e.key.toLowerCase())) {
+          const idx = e.key.toLowerCase().charCodeAt(0) - 97;
+          if (options[idx]) handleSelectOption(options[idx]);
+        } else if (e.key === 'Enter' && selectedOption && !loading) {
+          e.preventDefault();
+          handleSubmit();
+        }
+      } else {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleNext();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [submitted, options, selectedOption, loading, handleSubmit, handleNext]);
 
   return (
     <div className="space-y-6 pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-extrabold text-white tracking-tight">Practice Engine</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-2xl font-extrabold text-white tracking-tight">Practice Engine</h2>
+            {streak > 0 && (
+              <span className="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">
+                <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                {streak} Streak
+              </span>
+            )}
+          </div>
           <p className="text-xs text-zinc-400">
             {mode === 'standard' ? 'SM-2 Spaced Repetition Due Queue' : 'Active Recall - Forgetting Curve Alert'}
           </p>
@@ -182,9 +310,13 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
               >
                 {currentQ.difficulty}
               </Badge>
+              <span className="flex items-center gap-1 text-[11px] text-zinc-400 font-mono bg-zinc-800/80 px-2 py-0.5 rounded-md border border-zinc-700/50">
+                <Timer className="w-3 h-3 text-zinc-400" />
+                {elapsedSec}s
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-zinc-500 font-mono">
+              <span className="text-[11px] text-zinc-500 font-mono hidden sm:inline">
                 Reps: {currentQ.srReps} | Ease: {currentQ.srEase.toFixed(2)}
               </span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700">
@@ -193,7 +325,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
             </div>
           </div>
 
-          <p className="text-base font-medium text-zinc-100 leading-relaxed">
+          <p className="text-base font-medium text-zinc-100 leading-relaxed whitespace-pre-line">
             {currentQ.stem}
           </p>
 
@@ -201,7 +333,8 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
           <div className="space-y-2.5 pt-2">
             {options.map((opt, idx) => {
               const isSelected = selectedOption === opt;
-              const isThisAnswer = opt === currentQ.answer;
+              const isThisAnswer = isAnswerMatch(opt, idx, currentQ.answer);
+              const letter = String.fromCharCode(65 + idx);
 
               let btnStyle = 'border-surface-border bg-zinc-900/60 hover:border-accent/40 text-zinc-200';
               if (submitted) {
@@ -221,11 +354,16 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                   key={idx}
                   disabled={submitted}
                   onClick={() => handleSelectOption(opt)}
-                  className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all duration-150 flex items-center justify-between ${btnStyle}`}
+                  className={`w-full text-left px-4 py-3 rounded-xl border text-sm transition-all duration-150 flex items-center justify-between group ${btnStyle}`}
                 >
-                  <span>{opt}</span>
-                  {submitted && isThisAnswer && <CheckCircle className="w-4 h-4 text-emerald-400" />}
-                  {submitted && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-rose-400" />}
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 rounded-lg bg-zinc-800/80 border border-zinc-700/60 flex items-center justify-center text-xs font-mono font-semibold text-zinc-400 group-hover:text-white">
+                      {letter}
+                    </span>
+                    <span>{opt}</span>
+                  </div>
+                  {submitted && isThisAnswer && <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />}
+                  {submitted && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-rose-400 shrink-0" />}
                 </button>
               );
             })}
@@ -246,6 +384,11 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                 onChange={(e) => setConfidence(parseInt(e.target.value))}
                 className="w-full accent-accent h-1.5 bg-zinc-800 rounded-lg cursor-pointer"
               />
+              <div className="flex justify-between text-[10px] text-zinc-500">
+                <span>Guess (1)</span>
+                <span>Neutral (3)</span>
+                <span>Certain (5)</span>
+              </div>
             </div>
           )}
 
@@ -273,15 +416,26 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                   ) : (
                     <XCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
                   )}
-                  <div className="text-xs space-y-1">
-                    <p className="font-bold text-sm">{isCorrect ? 'Correct Answer!' : 'Incorrect'}</p>
-                    <p className="text-zinc-300 leading-relaxed">{currentQ.solutionMd}</p>
+                  <div className="text-xs space-y-1 w-full">
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-sm">{isCorrect ? 'Correct Answer!' : 'Incorrect'}</p>
+                      {bestStreak > 1 && (
+                        <span className="text-[10px] text-zinc-400 font-mono">
+                          Best streak: {bestStreak}
+                        </span>
+                      )}
+                    </div>
+                    {currentQ.solutionMd && (
+                      <p className="text-zinc-300 leading-relaxed whitespace-pre-line pt-1">
+                        {currentQ.solutionMd}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <Button onClick={handleNext} className="w-full">
                   Next Question
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 ml-1.5" />
                 </Button>
               </div>
             )}
