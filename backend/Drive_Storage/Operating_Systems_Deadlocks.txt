@@ -1,0 +1,1 @@
+Deadlock characteristics: 1. Mutual Exclusion 2. Hold and Wait 3. No Preemption 4. Circular Wait. Banker Algorithm is used for deadlock avoidance by verifying safe state via Work and Need matrices. Safe state implies no deadlock.

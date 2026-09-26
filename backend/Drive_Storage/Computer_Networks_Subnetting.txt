@@ -1,0 +1,1 @@
+Subnetting allows dividing a classful IP network into smaller subnetworks. Subnet mask determines network ID and host ID. CIDR notation /26 means 26 bits for network and 6 bits for host. Total usable hosts = 2^6 - 2 = 62. Network address and broadcast address cannot be assigned to hosts.

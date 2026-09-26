@@ -1,0 +1,5 @@
+bin/
+obj/
+app.db*
+Drive_Storage/
+.git/
