@@ -78,6 +78,7 @@ public interface IVideoLectureComponent
     LectureTracker CreateLecture(CreateLectureRequest request);
     LectureTracker? UpdateProgress(int id, UpdateLectureProgressRequest request);
     bool DeleteLecture(int id);
+    YouTubeSyncResult SyncYouTubeHistory(YouTubeSyncRequest request);
 }
 
 public interface IGoogleDriveStorageComponent

@@ -210,8 +210,19 @@ public static class ApiEndpoints
             return deleted ? Results.Ok(new { deleted = true }) : Results.NotFound();
         });
 
+        lectures.MapPost("/sync-youtube", (YouTubeSyncRequest req, IVideoLectureComponent lectureComp) =>
+        {
+            var result = lectureComp.SyncYouTubeHistory(req);
+            return Results.Ok(result);
+        });
+
         // ── Google Drive & Storage Endpoints ───────────────────
         var drive = app.MapGroup("/api/drive").WithTags("Drive");
+
+        drive.MapGet("/stream/{fileId}", (string fileId) =>
+        {
+            return Results.Redirect($"https://drive.google.com/file/d/{fileId}/preview", permanent: false);
+        });
 
         drive.MapGet("/status", (IGoogleDriveStorageComponent driveComp) =>
         {

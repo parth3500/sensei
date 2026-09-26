@@ -189,6 +189,24 @@ export const api = {
     await fetchJson(`${API_BASE}/lectures/${id}`, { method: 'DELETE' });
   },
 
+  async syncYouTubeHistory(payload: {
+    urls?: string[];
+    historyItems?: Array<{
+      title?: string;
+      url?: string;
+      videoId?: string;
+      currentTimeSec?: number;
+      totalDurationSec?: number;
+      completed?: boolean;
+    }>;
+    rawText?: string;
+  }): Promise<{ syncedCount: number; newLecturesCount: number; updatedCount: number; message: string }> {
+    return fetchJson(`${API_BASE}/lectures/sync-youtube`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
   // Google Drive & Notes Ingest
   async getDriveStatus(): Promise<any> {
     return fetchJson(`${API_BASE}/drive/status`);

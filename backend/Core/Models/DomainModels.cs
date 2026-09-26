@@ -212,3 +212,28 @@ public class FlashcardItem
 
 
 
+
+public class YouTubeSyncItem
+{
+    public string? Title { get; set; }
+    public string? Url { get; set; }
+    public string? VideoId { get; set; }
+    public int? CurrentTimeSec { get; set; }
+    public int? TotalDurationSec { get; set; }
+    public bool? Completed { get; set; }
+}
+
+public class YouTubeSyncRequest
+{
+    public List<string>? Urls { get; set; }
+    public List<YouTubeSyncItem>? HistoryItems { get; set; }
+    public string? RawText { get; set; }
+}
+
+public class YouTubeSyncResult
+{
+    public int SyncedCount { get; set; }
+    public int NewLecturesCount { get; set; }
+    public int UpdatedCount { get; set; }
+    public string Message { get; set; } = string.Empty;
+}

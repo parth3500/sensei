@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
-import { Video, Plus, CheckCircle, Play, Clock, ExternalLink, Trash2, Edit3 } from 'lucide-react';
+import { Video, Plus, CheckCircle, Play, Clock, ExternalLink, Trash2, Edit3, HardDrive, Youtube, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { LectureItem } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { api } from '@/services/api';
 
 interface LecturesViewProps {
   lectures: LectureItem[];
   onAddLecture: (data: { title: string; videoUrl: string; totalDurationSec?: number }) => Promise<void>;
   onUpdateProgress: (id: number, data: { currentTimeSec: number; totalDurationSec?: number; completed?: boolean; notes?: string }) => Promise<void>;
   onDeleteLecture: (id: number) => Promise<void>;
+  onRefreshLectures?: () => Promise<void>;
 }
 
 function formatTime(seconds: number): string {
@@ -19,13 +21,29 @@ function formatTime(seconds: number): string {
   return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+function getDriveFileId(url: string, videoId?: string | null): string | null {
+  if (videoId && videoId.startsWith('drive:')) return videoId.replace('drive:', '');
+  if (!url) return null;
+  const m = url.match(/(?:drive\.google\.com\/(?:file\/d\/|open\?id=))([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+function getYouTubeId(url: string, videoId?: string | null): string | null {
+  if (videoId && !videoId.startsWith('drive:')) return videoId;
+  if (!url) return null;
+  const m = url.match(/(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=)([^#\&\?]{11})/);
+  return m ? m[1] : null;
+}
+
 export const LecturesView: React.FC<LecturesViewProps> = ({
   lectures,
   onAddLecture,
   onUpdateProgress,
   onDeleteLecture,
+  onRefreshLectures,
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [selectedLecture, setSelectedLecture] = useState<LectureItem | null>(null);
 
   // Form states
@@ -33,6 +51,11 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
   const [url, setUrl] = useState('');
   const [durationMin, setDurationMin] = useState(45);
   const [loading, setLoading] = useState(false);
+
+  // Sync state
+  const [syncInput, setSyncInput] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   // Inline progress update states
   const [currentMinutes, setCurrentMinutes] = useState(0);
@@ -64,6 +87,54 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
     }
   };
 
+  const handleSyncHistory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!syncInput.trim()) return;
+
+    setSyncing(true);
+    setSyncMessage(null);
+    try {
+      let historyItems: any[] = [];
+      let rawText = syncInput.trim();
+
+      // Check if user pasted JSON array (e.g. Google Takeout watch-history.json)
+      if (rawText.startsWith('[') && rawText.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(rawText);
+          if (Array.isArray(parsed)) {
+            historyItems = parsed.map((item: any) => ({
+              title: item.title || item.titleUrl || 'Watched Lecture',
+              url: item.titleUrl || item.url || '',
+              currentTimeSec: item.currentTimeSec || item.timeWatchedSec,
+              completed: item.completed ?? true,
+            }));
+          }
+        } catch {
+          // treat as raw text
+        }
+      }
+
+      const res = await api.syncYouTubeHistory({
+        historyItems: historyItems.length > 0 ? historyItems : undefined,
+        rawText: historyItems.length === 0 ? rawText : undefined,
+      });
+
+      setSyncMessage(res.message);
+      if (onRefreshLectures) {
+        await onRefreshLectures();
+      }
+      setTimeout(() => {
+        setIsSyncModalOpen(false);
+        setSyncMessage(null);
+        setSyncInput('');
+      }, 2500);
+    } catch (err: any) {
+      setSyncMessage(err.message || 'Failed to sync YouTube history');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const handleSaveProgress = async () => {
     if (!selectedLecture) return;
     const timeSec = currentMinutes * 60;
@@ -88,18 +159,27 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
     }
   };
 
+  const selectedDriveId = selectedLecture ? getDriveFileId(selectedLecture.videoUrl, selectedLecture.videoId) : null;
+  const selectedYouTubeId = selectedLecture ? getYouTubeId(selectedLecture.videoUrl, selectedLecture.videoId) : null;
+
   return (
     <div className="space-y-6 pb-20">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-extrabold text-white tracking-tight">Lecture Tracker</h2>
-          <p className="text-xs text-zinc-400">Track video progress, timestamps &amp; notes</p>
+          <p className="text-xs text-zinc-400">Stream YouTube &amp; Google Drive lectures, track progress &amp; sync history</p>
         </div>
-        <Button onClick={() => setIsModalOpen(true)} size="sm">
-          <Plus className="w-4 h-4" />
-          Add Video Link
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setIsSyncModalOpen(true)} variant="secondary" size="sm" className="border-red-500/30 text-red-300 hover:bg-red-500/10">
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5 text-red-400" />
+            Sync YouTube History
+          </Button>
+          <Button onClick={() => setIsModalOpen(true)} size="sm">
+            <Plus className="w-4 h-4 mr-1.5" />
+            Add Video
+          </Button>
+        </div>
       </div>
 
       {/* Active Lecture Player / Progress Box */}
@@ -107,8 +187,21 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
         <Card className="space-y-4 border-accent/40 bg-surface-card/90">
           <div className="flex justify-between items-start gap-2">
             <div>
-              <span className="text-[10px] font-bold text-accent uppercase tracking-wider">Active Lecture</span>
-              <h3 className="text-base font-bold text-white">{selectedLecture.title}</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-accent uppercase tracking-wider">Active Lecture</span>
+                {selectedDriveId ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    <HardDrive className="w-3 h-3 text-blue-400" />
+                    Google Drive Stream
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30">
+                    <Youtube className="w-3 h-3 text-red-400" />
+                    YouTube
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base font-bold text-white pt-1">{selectedLecture.title}</h3>
             </div>
             <a
               href={selectedLecture.videoUrl}
@@ -121,13 +214,23 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
             </a>
           </div>
 
-          {/* YouTube Embed if available */}
-          {selectedLecture.videoId ? (
+          {/* Embedded Video Player: Google Drive or YouTube */}
+          {selectedDriveId ? (
             <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-surface-border bg-black">
               <iframe
-                src={`https://www.youtube.com/embed/${selectedLecture.videoId}?start=${selectedLecture.currentTimeSec}`}
+                src={`https://drive.google.com/file/d/${selectedDriveId}/preview`}
                 title={selectedLecture.title}
-                className="w-full h-full"
+                className="w-full h-full border-0"
+                allow="autoplay; encrypted-media; fullscreen"
+                allowFullScreen
+              />
+            </div>
+          ) : selectedYouTubeId ? (
+            <div className="relative w-full aspect-video rounded-xl overflow-hidden border border-surface-border bg-black">
+              <iframe
+                src={`https://www.youtube.com/embed/${selectedYouTubeId}?start=${selectedLecture.currentTimeSec}`}
+                title={selectedLecture.title}
+                className="w-full h-full border-0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
               />
@@ -227,11 +330,12 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
         {lectures.length === 0 ? (
           <div className="p-8 text-center rounded-2xl border border-dashed border-zinc-800 bg-surface-card/30">
             <Video className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-            <p className="text-xs text-zinc-400 font-medium">No video lectures added yet. Hit + Add Video Link to start tracking.</p>
+            <p className="text-xs text-zinc-400 font-medium">No video lectures added yet. Hit + Add Video or Sync YouTube History to start tracking.</p>
           </div>
         ) : (
           lectures.map((lec) => {
             const isSelected = selectedLecture?.id === lec.id;
+            const isDrive = lec.videoUrl.includes('drive.google.com') || lec.videoId?.startsWith('drive:');
             const pct =
               lec.totalDurationSec > 0
                 ? Math.min(100, Math.round((lec.currentTimeSec / lec.totalDurationSec) * 100))
@@ -252,27 +356,48 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                       lec.completed
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : isDrive
+                        ? 'bg-blue-500/20 text-blue-400'
                         : 'bg-zinc-800 text-accent'
                     }`}
                   >
                     {lec.completed ? <CheckCircle className="w-5 h-5" /> : <Play className="w-4 h-4" />}
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-white truncate">{lec.title}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[11px] text-zinc-400 flex items-center gap-1 font-mono">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-semibold text-white truncate">{lec.title}</p>
+                      {isDrive && (
+                        <span className="text-[10px] text-blue-400 bg-blue-500/10 px-1.5 py-0.2 rounded border border-blue-500/20 shrink-0">
+                          Drive
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3 text-[11px] text-zinc-500">
+                      <span className="flex items-center gap-1 font-mono">
                         <Clock className="w-3 h-3 text-zinc-500" />
                         {formatTime(lec.currentTimeSec)} / {formatTime(lec.totalDurationSec)}
                       </span>
-                      <Badge variant={lec.completed ? 'green' : pct > 0 ? 'purple' : 'zinc'}>
-                        {lec.completed ? 'Finished' : `${pct}%`}
-                      </Badge>
+                      <span>&bull;</span>
+                      <span className={pct === 100 ? 'text-emerald-400 font-semibold' : 'text-zinc-400'}>
+                        {pct}% watched
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          lec.completed ? 'bg-emerald-500' : 'bg-accent'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -299,21 +424,24 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="e.g. Gate Smashers: Process Synchronization (Peterson Solution)"
+              placeholder="e.g. Gate Smashers: Process Synchronization or Drive Lecture Part 1"
               autoFocus
               className="w-full px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-accent text-sm"
             />
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-300">Video Link / YouTube URL</label>
+            <label className="text-xs font-semibold text-zinc-300">Video Link (YouTube URL or Google Drive Link)</label>
             <input
               type="url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="https://www.youtube.com/watch?v=... or https://drive.google.com/file/d/.../view"
               className="w-full px-3.5 py-2 rounded-xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-600 focus:outline-none focus:border-accent text-sm"
             />
+            <p className="text-[11px] text-zinc-500 pt-0.5">
+              Supports YouTube videos, YouTube playlists, and direct Google Drive video file links.
+            </p>
           </div>
 
           <div className="space-y-1">
@@ -334,6 +462,48 @@ export const LecturesView: React.FC<LecturesViewProps> = ({
             </Button>
             <Button type="submit" variant="primary" size="sm" disabled={loading || !title.trim() || !url.trim()}>
               {loading ? 'Adding...' : 'Track Lecture'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Sync YouTube History Modal */}
+      <Modal isOpen={isSyncModalOpen} onClose={() => setIsSyncModalOpen(false)} title="Sync YouTube History & Playlists">
+        <form onSubmit={handleSyncHistory} className="space-y-4">
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 space-y-1">
+            <p className="font-semibold flex items-center gap-1.5 text-white">
+              <Youtube className="w-4 h-4 text-red-400" />
+              Automated Lecture History Sync
+            </p>
+            <p className="text-[11px] text-zinc-300 leading-relaxed">
+              Paste YouTube video links, playlist URLs (e.g. Gate Smashers, NPTEL, Abdul Bari), or export JSON from Google Takeout to automatically import and synchronize watched timestamps.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-zinc-300">Paste Links or Watch History Text</label>
+            <textarea
+              value={syncInput}
+              onChange={(e) => setSyncInput(e.target.value)}
+              placeholder="Paste one or more URLs:&#10;https://www.youtube.com/watch?v=2h3eWaXx11A&#10;https://www.youtube.com/playlist?list=PLBlnK6fEyqRgMCUAG0XRw78UA8qnv6jEx&#10;&#10;Or paste Google Takeout watch-history JSON array"
+              rows={5}
+              className="w-full p-3 rounded-xl bg-zinc-900 border border-zinc-800 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-red-500 font-mono"
+            />
+          </div>
+
+          {syncMessage && (
+            <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{syncMessage}</span>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setIsSyncModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" disabled={syncing || !syncInput.trim()}>
+              {syncing ? 'Synchronizing...' : 'Sync History'}
             </Button>
           </div>
         </form>

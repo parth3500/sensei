@@ -15,10 +15,18 @@ public class VideoLectureComponent : IVideoLectureComponent
         _db = db;
     }
 
-    private static string? ExtractYouTubeId(string url)
+    public static string? ExtractVideoId(string url)
     {
-        if (string.IsNullOrEmpty(url)) return null;
+        if (string.IsNullOrWhiteSpace(url)) return null;
 
+        // Check Google Drive file
+        var driveMatch = Regex.Match(url, @"(?:drive\.google\.com\/(?:file\/d\/|open\?id=))([a-zA-Z0-9_-]+)");
+        if (driveMatch.Success)
+        {
+            return $"drive:{driveMatch.Groups[1].Value}";
+        }
+
+        // Check YouTube
         var m1 = Regex.Match(url, @"(?:youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=)([^#\&\?]{11})");
         if (m1.Success) return m1.Groups[1].Value;
 
@@ -65,7 +73,7 @@ public class VideoLectureComponent : IVideoLectureComponent
 
     public LectureTracker CreateLecture(CreateLectureRequest request)
     {
-        string? videoId = ExtractYouTubeId(request.VideoUrl);
+        string? videoId = ExtractVideoId(request.VideoUrl);
 
         long newId = _db.InsertAndGetId(@"
             INSERT INTO lecture_trackers (title, video_url, video_id, current_time_sec, total_duration_sec, completed, subject_id, last_watched_at, created_at)
@@ -126,5 +134,125 @@ public class VideoLectureComponent : IVideoLectureComponent
     {
         int affected = _db.ExecuteNonQuery("DELETE FROM lecture_trackers WHERE id = @id", ("@id", id));
         return affected > 0;
+    }
+
+    public YouTubeSyncResult SyncYouTubeHistory(YouTubeSyncRequest request)
+    {
+        int newCount = 0;
+        int updatedCount = 0;
+
+        var itemsToProcess = new List<YouTubeSyncItem>();
+
+        if (request.HistoryItems != null && request.HistoryItems.Count > 0)
+        {
+            itemsToProcess.AddRange(request.HistoryItems);
+        }
+
+        // Process explicit URLs
+        if (request.Urls != null)
+        {
+            foreach (var url in request.Urls)
+            {
+                if (string.IsNullOrWhiteSpace(url)) continue;
+                string? vId = ExtractVideoId(url);
+                itemsToProcess.Add(new YouTubeSyncItem
+                {
+                    Url = url.Trim(),
+                    VideoId = vId,
+                    Title = $"Lecture ({vId ?? "Video"})",
+                    TotalDurationSec = 3600
+                });
+            }
+        }
+
+        // Parse raw text for youtube and drive links
+        if (!string.IsNullOrWhiteSpace(request.RawText))
+        {
+            var urlMatches = Regex.Matches(request.RawText, @"https?://[^\s<>""']+");
+            foreach (Match m in urlMatches)
+            {
+                string u = m.Value;
+                string? vId = ExtractVideoId(u);
+                if (vId != null)
+                {
+                    itemsToProcess.Add(new YouTubeSyncItem
+                    {
+                        Url = u,
+                        VideoId = vId,
+                        Title = $"Synced Lecture ({vId})",
+                        TotalDurationSec = 3600
+                    });
+                }
+            }
+        }
+
+        foreach (var item in itemsToProcess)
+        {
+            string url = item.Url ?? "";
+            string? videoId = item.VideoId ?? ExtractVideoId(url);
+            if (string.IsNullOrEmpty(url) && string.IsNullOrEmpty(videoId)) continue;
+
+            if (string.IsNullOrEmpty(url) && !string.IsNullOrEmpty(videoId))
+            {
+                url = videoId.StartsWith("drive:") 
+                    ? $"https://drive.google.com/file/d/{videoId.Replace("drive:", "")}/view" 
+                    : $"https://www.youtube.com/watch?v={videoId}";
+            }
+
+            // Find existing
+            var existing = _db.QuerySingle(
+                "SELECT * FROM lecture_trackers WHERE video_id = @vId OR video_url = @vUrl LIMIT 1",
+                ("@vId", videoId),
+                ("@vUrl", url)
+            );
+
+            int duration = item.TotalDurationSec ?? 3600;
+            int currentTime = item.CurrentTimeSec ?? (item.Completed == true ? duration : 0);
+            bool isCompleted = item.Completed ?? (currentTime >= (duration * 0.9));
+
+            if (existing != null)
+            {
+                int exId = Convert.ToInt32(existing["id"]);
+                int exTime = Convert.ToInt32(existing["current_time_sec"]);
+                // Only update progress if new time is greater
+                int targetTime = Math.Max(exTime, currentTime);
+                bool targetCompleted = isCompleted || (targetTime >= (duration * 0.9));
+
+                _db.ExecuteNonQuery(@"
+                    UPDATE lecture_trackers 
+                    SET current_time_sec = @cTime, completed = @comp, last_watched_at = datetime('now')
+                    WHERE id = @id
+                ",
+                    ("@cTime", targetTime),
+                    ("@comp", targetCompleted ? 1 : 0),
+                    ("@id", exId)
+                );
+                updatedCount++;
+            }
+            else
+            {
+                string title = !string.IsNullOrWhiteSpace(item.Title) ? item.Title : $"Lecture ({videoId ?? "Video"})";
+                _db.ExecuteNonQuery(@"
+                    INSERT INTO lecture_trackers (title, video_url, video_id, current_time_sec, total_duration_sec, completed, last_watched_at, created_at)
+                    VALUES (@title, @url, @vId, @cTime, @dur, @comp, datetime('now'), datetime('now'))
+                ",
+                    ("@title", title),
+                    ("@url", url),
+                    ("@vId", videoId),
+                    ("@cTime", currentTime),
+                    ("@dur", duration),
+                    ("@comp", isCompleted ? 1 : 0)
+                );
+                newCount++;
+            }
+        }
+
+        return new YouTubeSyncResult
+        {
+            SyncedCount = newCount + updatedCount,
+            NewLecturesCount = newCount,
+            UpdatedCount = updatedCount,
+            Message = $"Successfully synced {newCount + updatedCount} lectures ({newCount} new, {updatedCount} updated progress)."
+        };
     }
 }

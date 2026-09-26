@@ -433,6 +433,10 @@ export default function SenseiApp() {
             onAddLecture={handleAddLecture}
             onUpdateProgress={handleUpdateLectureProgress}
             onDeleteLecture={handleDeleteLecture}
+            onRefreshLectures={async () => {
+              const l = await api.getLectures();
+              setLectures(l);
+            }}
           />
         )}
 

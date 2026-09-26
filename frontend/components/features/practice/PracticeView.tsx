@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BookOpen, CheckCircle, XCircle, ArrowRight, BrainCircuit, Sparkles, AlertOctagon, RotateCcw, Flame, Timer } from 'lucide-react';
+import { BookOpen, CheckCircle, XCircle, ArrowRight, BrainCircuit, Sparkles, AlertOctagon, RotateCcw, Flame, Timer, SkipForward } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Question, ForgettingRiskItem } from '@/types';
 import { Button } from '@/components/ui/Button';
@@ -154,6 +154,21 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     }
   }, [currentIndex, activeQuestionList.length, onRefresh]);
 
+  const handleSkip = useCallback(() => {
+    setSelectedOption(null);
+    setSubmitted(false);
+    setIsCorrect(null);
+    setConfidence(3);
+    setStartTime(Date.now());
+    setElapsedSec(0);
+    if (currentIndex < activeQuestionList.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      onRefresh();
+      setCurrentIndex(0);
+    }
+  }, [currentIndex, activeQuestionList.length, onRefresh]);
+
   const handleSwitchMode = (newMode: 'standard' | 'forgetting_risk') => {
     setMode(newMode);
     setCurrentIndex(0);
@@ -165,14 +180,17 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     setElapsedSec(0);
   };
 
-  // Keyboard shortcut listener (1-4 / A-D to select, Enter to check / next)
+  // Keyboard shortcut listener (1-4 / A-D to select, S/Esc to skip, Enter to check / next)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if focus is in an input or textarea
       if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
 
       if (!submitted) {
-        if (['1', '2', '3', '4'].includes(e.key)) {
+        if (e.key.toLowerCase() === 's' || e.key === 'Escape') {
+          e.preventDefault();
+          handleSkip();
+        } else if (['1', '2', '3', '4'].includes(e.key)) {
           const idx = parseInt(e.key) - 1;
           if (options[idx]) handleSelectOption(options[idx]);
         } else if (['a', 'b', 'c', 'd'].includes(e.key.toLowerCase())) {
@@ -192,7 +210,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [submitted, options, selectedOption, loading, handleSubmit, handleNext]);
+  }, [submitted, options, selectedOption, loading, handleSubmit, handleNext, handleSkip]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -392,16 +410,28 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
             </div>
           )}
 
-          {/* Submit or Next Button */}
+          {/* Submit or Skip Buttons */}
           <div className="pt-2">
             {!submitted ? (
-              <Button
-                onClick={handleSubmit}
-                disabled={!selectedOption || loading}
-                className="w-full"
-              >
-                {loading ? 'Evaluating...' : 'Check Answer'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!selectedOption || loading}
+                  className="flex-1"
+                >
+                  {loading ? 'Evaluating...' : 'Check Answer'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleSkip}
+                  className="px-4 text-xs font-semibold text-zinc-300 hover:text-white border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800"
+                  title="Skip to next question without penalty (Press S or Esc)"
+                >
+                  <SkipForward className="w-4 h-4 mr-1 text-zinc-400" />
+                  Skip
+                </Button>
+              </div>
             ) : (
               <div className="space-y-4 animate-fade-in">
                 <div
