@@ -131,6 +131,10 @@ export const api = {
     return fetchJson(`${API_BASE}/stats/weak-topics?limit=${limit}`);
   },
 
+  async resetStats(): Promise<{ reset: boolean; message: string }> {
+    return fetchJson(`${API_BASE}/stats/reset`, { method: 'POST' });
+  },
+
   // AI Tutor
   async sendAiChat(messages: ChatMessage[], model?: string): Promise<{ role: string; content: string }> {
     return fetchJson(`${API_BASE}/ai/chat`, {

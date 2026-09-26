@@ -53,6 +53,7 @@ public interface IAnalyticsComponent
     WeakTopicsResponse GetWeakTopics(int limit = 5);
     AdvancedAnalyticsResponse GetAdvancedAnalytics();
     List<ForgettingRiskQuestion> GetForgettingRiskQuestions(int limit = 5);
+    void ResetAllMetrics();
 }
 
 public interface IAiTutorComponent

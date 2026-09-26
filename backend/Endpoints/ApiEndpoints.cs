@@ -126,6 +126,12 @@ public static class ApiEndpoints
             return Results.Ok(analytics.GetWeakTopics(limit ?? 5));
         });
 
+        stats.MapPost("/reset", (IAnalyticsComponent analytics) =>
+        {
+            analytics.ResetAllMetrics();
+            return Results.Ok(new { reset = true, message = "All metrics successfully reset to zero." });
+        });
+
         // ── AI Endpoints ───────────────────────────────────────
         var ai = app.MapGroup("/api/ai").WithTags("AI");
 

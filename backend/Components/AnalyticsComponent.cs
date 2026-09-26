@@ -216,30 +216,47 @@ public class AnalyticsComponent : IAnalyticsComponent
             string sName = sr["subject_name"]?.ToString() ?? "CS";
             int tQ = sr["total_q"] != null ? Convert.ToInt32(sr["total_q"]) : 0;
             int mQ = sr["mastered_q"] != null ? Convert.ToInt32(sr["mastered_q"]) : 0;
-            double pct = tQ > 0 ? Math.Round((double)mQ / tQ * 100.0, 1) : 40.0;
+            double pct = tQ > 0 ? Math.Round((double)mQ / tQ * 100.0, 1) : 0.0;
 
             masteryList.Add(new SubjectMastery(sName, tQ, mQ, pct));
         }
 
         if (masteryList.Count == 0)
         {
-            masteryList.Add(new SubjectMastery("Data Structures & Algo", 15, 9, 60.0));
-            masteryList.Add(new SubjectMastery("Operating Systems", 12, 8, 66.7));
-            masteryList.Add(new SubjectMastery("Database Systems", 10, 7, 70.0));
-            masteryList.Add(new SubjectMastery("Computer Networks", 10, 5, 50.0));
-            masteryList.Add(new SubjectMastery("Theory of Computation", 8, 6, 75.0));
+            masteryList.Add(new SubjectMastery("Data Structures & Algo", 15, 0, 0.0));
+            masteryList.Add(new SubjectMastery("Operating Systems", 12, 0, 0.0));
+            masteryList.Add(new SubjectMastery("Database Systems", 10, 0, 0.0));
+            masteryList.Add(new SubjectMastery("Computer Networks", 10, 0, 0.0));
+            masteryList.Add(new SubjectMastery("Theory of Computation", 8, 0, 0.0));
         }
 
-        // Time spent distribution
+        // Time spent distribution from real activity records
+        var practiceSecRow = _db.QuerySingle("SELECT COALESCE(SUM(time_sec), 0) as s FROM attempts");
+        int practiceMin = practiceSecRow != null && practiceSecRow["s"] != null ? Convert.ToInt32(practiceSecRow["s"]) / 60 : 0;
+
+        var lectureSecRow = _db.QuerySingle("SELECT COALESCE(SUM(current_time_sec), 0) as s FROM lecture_trackers");
+        int lectureMin = lectureSecRow != null && lectureSecRow["s"] != null ? Convert.ToInt32(lectureSecRow["s"]) / 60 : 0;
+
+        var notesMinRow = _db.QuerySingle("SELECT COALESCE(SUM(actual_min), 0) as m FROM tasks WHERE title LIKE '%Note%' OR title LIKE '%Revision%'");
+        int notesMin = notesMinRow != null && notesMinRow["m"] != null ? Convert.ToInt32(notesMinRow["m"]) : 0;
+
+        var mockSecRow = _db.QuerySingle("SELECT COALESCE(SUM(time_taken_sec), 0) as s FROM mock_test_sessions");
+        int mockMin = mockSecRow != null && mockSecRow["s"] != null ? Convert.ToInt32(mockSecRow["s"]) / 60 : 0;
+
         var timeSpent = new List<TimeSpentMetric>
         {
-            new TimeSpentMetric("Practice & Quizzes", 145),
-            new TimeSpentMetric("Video Lectures", 180),
-            new TimeSpentMetric("Quick Revision Notes", 65),
-            new TimeSpentMetric("Mock Problem Solving", 90)
+            new TimeSpentMetric("Practice & Quizzes", practiceMin),
+            new TimeSpentMetric("Video Lectures", lectureMin),
+            new TimeSpentMetric("Quick Revision Notes", notesMin),
+            new TimeSpentMetric("Mock Problem Solving", mockMin)
         };
 
-        double avgRetention = highRisk.Count > 0 ? Math.Round(highRisk.Average(h => h.RetentionProbability), 1) : 82.5;
+        // If no attempts or reviews exist, retention is initialized to 0.0%
+        var attemptCountRow = _db.QuerySingle("SELECT COUNT(*) as c FROM attempts");
+        int totalAttempts = attemptCountRow != null && attemptCountRow["c"] != null ? Convert.ToInt32(attemptCountRow["c"]) : 0;
+        double avgRetention = (totalAttempts > 0 && highRisk.Count > 0)
+            ? Math.Round(highRisk.Average(h => h.RetentionProbability), 1)
+            : 0.0;
 
         return new AdvancedAnalyticsResponse(
             overview.Accuracy,
@@ -248,5 +265,18 @@ public class AnalyticsComponent : IAnalyticsComponent
             timeSpent,
             highRisk
         );
+    }
+
+    public void ResetAllMetrics()
+    {
+        _db.ExecuteNonQuery(@"
+            DELETE FROM attempts;
+            DELETE FROM mock_test_sessions;
+            DELETE FROM sessions;
+            UPDATE tasks SET status = 'pending', done_at = NULL, actual_min = 0;
+            UPDATE questions SET sr_reps = 0, sr_interval = 0, sr_ease = 2.5, sr_due = date('now');
+            UPDATE flashcards SET reps = 0, box = 1, interval_days = 1, last_reviewed_at = NULL, next_review_date = date('now');
+            UPDATE lecture_trackers SET current_time_sec = 0, completed = 0, last_watched_at = NULL;
+        ");
     }
 }

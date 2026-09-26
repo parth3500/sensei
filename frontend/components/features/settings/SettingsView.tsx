@@ -1,5 +1,5 @@
-import React from 'react';
-import { Bell, Shield, LogOut, Database, Cpu } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bell, Shield, LogOut, Cpu, RotateCcw, GraduationCap, CheckCircle2 } from 'lucide-react';
 import { ReminderItem } from '@/types';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -7,20 +7,90 @@ import { Button } from '@/components/ui/Button';
 interface SettingsViewProps {
   reminders: ReminderItem[];
   onToggleReminder: (id: number, enabled: boolean) => Promise<void>;
+  onResetMetrics?: () => Promise<void>;
   onLogout: () => Promise<void>;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
   reminders,
   onToggleReminder,
+  onResetMetrics,
   onLogout,
 }) => {
+  const [resetting, setResetting] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+
+  const handleReset = async () => {
+    if (!onResetMetrics) return;
+    const confirmed = window.confirm(
+      'Are you sure you want to reset all metrics to zero? This will reset attempts, time spent, streaks, and subject mastery to 0.'
+    );
+    if (!confirmed) return;
+
+    setResetting(true);
+    try {
+      await onResetMetrics();
+      setResetSuccess(true);
+      setTimeout(() => setResetSuccess(false), 4000);
+    } finally {
+      setResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-20">
       <div>
         <h2 className="text-2xl font-extrabold text-white tracking-tight">Settings</h2>
-        <p className="text-xs text-zinc-400">System configuration and notifications</p>
+        <p className="text-xs text-zinc-400">System configuration, curriculum, and metrics</p>
       </div>
+
+      {/* Curriculum & College Mode Card */}
+      <Card className="space-y-3 border-indigo-500/20 bg-indigo-500/5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-4 h-4 text-indigo-400" />
+            <h3 className="text-sm font-bold text-white">Curriculum &amp; College Mode</h3>
+          </div>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+            Adaptable
+          </span>
+        </div>
+        <p className="text-xs text-zinc-300 leading-relaxed">
+          Current profile: <strong>GATE Computer Science &amp; IT</strong>.
+        </p>
+        <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 text-xs text-zinc-400 space-y-1.5">
+          <p className="text-zinc-200 font-medium">🎓 College Customization Ready</p>
+          <p className="text-[11px] text-zinc-400 leading-relaxed">
+            Whenever you are ready, you can ask to adapt Sensei for your specific college or university (semesters 1–8, internal marks, lab exams, university syllabi, and CGPA tracking).
+          </p>
+        </div>
+      </Card>
+
+      {/* Metrics Management */}
+      <Card className="space-y-3 border-amber-500/20 bg-amber-500/5">
+        <div className="flex items-center gap-2">
+          <RotateCcw className="w-4 h-4 text-amber-400" />
+          <h3 className="text-sm font-bold text-white">Metrics &amp; Progress Reset</h3>
+        </div>
+        <p className="text-xs text-zinc-300 leading-relaxed">
+          Reset all study metrics, attempts, time spent, streaks, and mastery percentages back to zero.
+        </p>
+        {resetSuccess && (
+          <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>All study metrics successfully reset to zero!</span>
+          </div>
+        )}
+        <Button
+          variant="secondary"
+          onClick={handleReset}
+          disabled={resetting}
+          className="w-full text-xs text-amber-300 border-amber-500/30 hover:bg-amber-500/10"
+        >
+          <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+          {resetting ? 'Resetting metrics...' : 'Reset All Metrics to Zero'}
+        </Button>
+      </Card>
 
       {/* Reminders Card */}
       <Card className="space-y-4">

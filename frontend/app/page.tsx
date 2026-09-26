@@ -319,6 +319,24 @@ export default function SenseiApp() {
     await api.toggleReminder(id, enabled);
   };
 
+  const handleResetMetrics = async () => {
+    await api.resetStats();
+    const [updatedStats, updatedHeatmap, updatedWeak, updatedAdv, updatedRisks, q] = await Promise.all([
+      api.getOverview(),
+      api.getHeatmap(90),
+      api.getWeakTopics(5),
+      api.getAdvancedAnalytics(),
+      api.getForgettingRiskQuestions(10),
+      api.getQuestions(),
+    ]);
+    setStats(updatedStats);
+    setHeatmap(updatedHeatmap.data || []);
+    setWeakTopics(updatedWeak.weakTopics || []);
+    setAdvancedAnalytics(updatedAdv);
+    setForgettingRisks(updatedRisks);
+    setQuestions(q);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#090a0f]">
@@ -458,6 +476,7 @@ export default function SenseiApp() {
           <SettingsView
             reminders={reminders}
             onToggleReminder={handleToggleReminder}
+            onResetMetrics={handleResetMetrics}
             onLogout={handleLogout}
           />
         )}
