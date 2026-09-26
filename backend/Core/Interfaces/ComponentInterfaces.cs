@@ -85,6 +85,7 @@ public interface IGoogleDriveStorageComponent
     List<DriveFile> GetIngestedFiles();
     Task<string> BackupDatabaseToDriveAsync();
     object GetDriveStatus();
+    Task<DriveSyncResult> SyncFromGoogleDriveAsync();
 }
 
 public interface IModuleManagerComponent

@@ -503,6 +503,31 @@ run_test \
     "200" \
     'has("totalCards") and has("dueCards") and has("box1Count")'
 
+echo -e "\n${CLR_BOLD}════════════════════════════════════════════════════════════════════════${CLR_RESET}"
+echo -e "${CLR_WHITE}${CLR_BOLD} 11. GOOGLE DRIVE STORAGE & CLOUD REST API SYNC${CLR_RESET}"
+echo -e "${CLR_BOLD}════════════════════════════════════════════════════════════════════════${CLR_RESET}"
+
+run_test \
+    "Drive Status (GET /api/drive/status)" \
+    "GET" "/api/drive/status" \
+    "" \
+    "200" \
+    'has("connected") and has("targetFolder") and has("localSyncPath")'
+
+run_test \
+    "Drive Files List (GET /api/drive/files)" \
+    "GET" "/api/drive/files" \
+    "" \
+    "200" \
+    'type == "array"'
+
+run_test \
+    "Drive Cloud REST Sync (GET /api/drive/sync)" \
+    "GET" "/api/drive/sync" \
+    "" \
+    "200" \
+    'has("success") and has("message") and has("syncedCount") and has("configured")'
+
 # ------------------------------------------------------------------------------
 # Latency Benchmarks & Summary
 # ------------------------------------------------------------------------------

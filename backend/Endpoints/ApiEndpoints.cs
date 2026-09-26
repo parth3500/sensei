@@ -217,6 +217,18 @@ public static class ApiEndpoints
             return Results.Ok(driveComp.GetIngestedFiles());
         });
 
+        drive.MapGet("/sync", async (IGoogleDriveStorageComponent driveComp) =>
+        {
+            var result = await driveComp.SyncFromGoogleDriveAsync();
+            return Results.Ok(result);
+        });
+
+        drive.MapPost("/sync", async (IGoogleDriveStorageComponent driveComp) =>
+        {
+            var result = await driveComp.SyncFromGoogleDriveAsync();
+            return Results.Ok(result);
+        });
+
         drive.MapPost("/ingest", async (ProcessDriveFileRequest req, IGoogleDriveStorageComponent driveComp) =>
         {
             var result = await driveComp.IngestDriveFileAsync(req);

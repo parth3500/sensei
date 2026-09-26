@@ -58,8 +58,16 @@ public record ReminderUpdateRequest(bool? Enabled, string? Cron, string? Title);
 public record CreateLectureRequest(string Title, string VideoUrl, int? TotalDurationSec = null, int? SubjectId = null);
 public record UpdateLectureProgressRequest(int CurrentTimeSec, int? TotalDurationSec = null, bool? Completed = null, string? Notes = null);
 
-public record ProcessDriveFileRequest(string FileName, string Content, string? FolderPath = null);
+public record ProcessDriveFileRequest(string FileName, string Content, string? FolderPath = null, string? FileId = null);
 public record DriveProcessResult(string FileName, string Summary, List<string> RevisionPoints, List<Question> GeneratedQuestions);
+public record DriveSyncResult(
+    bool Success,
+    string Message,
+    int SyncedCount,
+    int TotalFilesFound,
+    List<string> SyncedFiles,
+    bool Configured
+);
 
 public record RegisterModuleRequest(string ModuleKey, string Title, string? Author = null, string? Description = null, string Icon = "Layers");
 

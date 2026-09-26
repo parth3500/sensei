@@ -194,6 +194,10 @@ export const api = {
     return fetchJson(`${API_BASE}/drive/files`);
   },
 
+  async syncDrive(): Promise<any> {
+    return fetchJson(`${API_BASE}/drive/sync`);
+  },
+
   async ingestDriveFile(data: { fileName: string; content: string; folderPath?: string }): Promise<DriveProcessResult> {
     return fetchJson(`${API_BASE}/drive/ingest`, {
       method: 'POST',
