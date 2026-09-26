@@ -13,7 +13,7 @@ services:
       - ASPNETCORE_URLS=http://0.0.0.0:5000
       - APP_PASSPHRASE=${APP_PASSPHRASE:-your-secure-passphrase-here}
     volumes:
-      - sensei-db:/app/data
+      - sensei-db:/app/Data
       - sensei-drive:/app/Drive_Storage
     restart: unless-stopped
 
