@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.railway.sensei",
+        "sha256_cert_fingerprints": ["88:72:9A:B0:DD:58:94:AC:D8:64:11:A1:E7:F0:42:60:71:E0:5A:63:4B:40:12:85:8B:8E:AE:A5:57:91:54:F6"]
+      }
+    }]
