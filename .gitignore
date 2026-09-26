@@ -1,0 +1,43 @@
+# OS and Editor files
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Large binaries & local downloaded installers
+*.tar.gz
+*.deb
+*.pem
+dotnet/
+dotnet_debs/
+
+# Legacy pre-assembly folders
+se/
+sen/
+web/
+
+# C# / .NET build artifacts
+**/bin/
+**/obj/
+backend/app.db*
+backend/Drive_Storage/Backups/*.db
+*.user
+*.suo
+
+# Node / Next.js artifacts
+**/node_modules/
+**/.next/
+frontend/out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Internal logs
+*.log

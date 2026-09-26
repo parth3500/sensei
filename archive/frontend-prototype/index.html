@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Sensei - AI Learning & Productivity</title>
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="/glass.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="pb-24 pt-safe min-h-screen flex flex-col" x-data="app()">
+
+    <!-- TOAST NOTIFICATIONS -->
+    <div class="fixed top-4 right-4 z-50 flex flex-col space-y-2 pointer-events-none">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="pointer-events-auto px-4 py-3 rounded-xl glass-card flex items-center space-x-3 text-sm transition-all transform translate-y-0"
+                 :class="toast.type === 'error' ? 'border-red-500/50 text-red-200' : 'border-green-500/50 text-green-200'">
+                <span x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <!-- MAIN CONTAINER -->
+    <main class="flex-1 max-w-4xl w-full mx-auto p-4">
+        
+        <!-- LOADING SKELETON -->
+        <template x-if="loading">
+            <div class="space-y-4 animate-pulse">
+                <div class="h-8 bg-zinc-800 rounded-xl w-1/3"></div>
+                <div class="h-32 bg-zinc-800 rounded-2xl w-full"></div>
+                <div class="h-32 bg-zinc-800 rounded-2xl w-full"></div>
+            </div>
+        </template>
+
+        <!-- ERROR STATE -->
+        <template x-if="error">
+            <div class="glass-card p-6 rounded-2xl text-center space-y-4 border-red-500/30 my-12">
+                <div class="text-red-400 font-semibold text-lg" x-text="error"></div>
+                <button @click="initApp()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-xl text-sm font-medium transition">Retry</button>
+            </div>
+        </template>
+
+        <!-- TABS CONTENT -->
+        <div x-show="!loading && !error">
+            
+            <!-- TODAY TAB -->
+            <div x-show="currentTab === 'today'" class="space-y-6">
+                <header class="flex justify-between items-center">
+                    <div>
+                        <h1 class="text-2xl font-bold tracking-tight">Today's Focus</h1>
+                        <p class="text-xs text-zinc-400" x-text="new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })"></p>
+                    </div>
+                    <button @click="openTaskModal = true" class="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 rounded-xl text-xs font-medium transition">+ Task</button>
+                </header>
+
+                <div class="glass-card p-5 rounded-2xl space-y-4">
+                    <h2 class="text-sm font-semibold text-zinc-300">Daily Streak & Progress</h2>
+                    <div class="flex justify-between items-center text-sm">
+                        <span class="text-zinc-400">Completed Tasks</span>
+                        <span class="font-bold text-purple-400" x-text="tasks.filter(t => t.completed).length + ' / ' + tasks.length"></span>
+                    </div>
+                    <div class="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                        <div class="bg-purple-600 h-full transition-all duration-500" :style="'width: ' + (tasks.length ? (tasks.filter(t => t.completed).length / tasks.length) * 100 : 0) + '%'"></div>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <h2 class="text-sm font-semibold text-zinc-300">Tasks</h2>
+                    <template x-if="tasks.length === 0">
+                        <div class="glass-card p-8 rounded-2xl text-center text-zinc-500 text-sm">No tasks for today. Add one above!</div>
+                    </template>
+                    <template x-for="task in tasks" :key="task.id">
+                        <div class="glass-card p-4 rounded-xl flex items-center justify-between transition">
+                            <div class="flex items-center space-x-3">
+                                <input type="checkbox" :checked="task.completed" @change="toggleTask(task.id)" class="w-5 h-5 accent-purple-600 rounded cursor-pointer">
+                                <span :class="{'line-through text-zinc-500': task.completed}" x-text="task.title" class="text-sm"></span>
+                            </div>
+                            <button @click="deleteTask(task.id)" class="text-zinc-500 hover:text-red-400 text-xs">Delete</button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <!-- PRACTICE TAB -->
+            <div x-show="currentTab === 'practice'" class="space-y-6">
+                <header>
+                    <h1 class="text-2xl font-bold tracking-tight">Active Practice</h1>
+                    <p class="text-xs text-zinc-400">Spaced repetition due queue</p>
+                </header>
+
+                <template x-if="questions.length === 0">
+                    <div class="glass-card p-8 rounded-2xl text-center text-zinc-500 text-sm">All caught up! No practice questions due.</div>
+                </template>
+
+                <template x-if="questions.length > 0">
+                    <div class="glass-card p-6 rounded-2xl space-y-4">
+                        <div class="text-xs font-semibold text-purple-400 uppercase tracking-wider" x-text="currentQuestion.topic"></div>
+                        <div class="text-lg font-medium" x-text="currentQuestion.prompt"></div>
+                        
+                        <div class="space-y-2 pt-4">
+                            <template x-for="option in currentQuestion.options">
+                                <button @click="submitAnswer(option)" class="w-full text-left p-3 rounded-xl bg-zinc-900/50 hover:bg-purple-600/20 border border-zinc-800 text-sm transition" x-text="option"></button>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- PROGRESS TAB -->
+            <div x-show="currentTab === 'progress'" class="space-y-6" x-init="initCharts()">
+                <header>
+                    <h1 class="text-2xl font-bold tracking-tight">Your Progress</h1>
+                    <p class="text-xs text-zinc-400">Analytics and mastery heatmap</p>
+                </header>
+
+                <div class="glass-card p-5 rounded-2xl space-y-4">
+                    <h2 class="text-sm font-semibold text-zinc-300">Activity Overview</h2>
+                    <canvas id="progressChart" class="w-full h-48"></canvas>
+                </div>
+            </div>
+
+            <!-- AI TAB -->
+            <div x-show="currentTab === 'ai'" class="flex flex-col h-[75vh] space-y-4">
+                <header>
+                    <h1 class="text-2xl font-bold tracking-tight">AI Tutor</h1>
+                    <p class="text-xs text-zinc-400">Ask questions or generate study plans</p>
+                </header>
+
+                <div class="flex-1 glass-card p-4 rounded-2xl overflow-y-auto space-y-4 flex flex-col">
+                    <template x-for="msg in chatMessages">
+                        <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                            <div class="max-w-[80%] p-3 rounded-xl text-sm" :class="msg.role === 'user' ? 'bg-purple-600 text-white' : 'bg-zinc-800 text-zinc-200'" x-text="msg.text"></div>
+                        </div>
+                    </template>
+                    <template x-if="aiTyping">
+                        <div class="flex justify-start">
+                            <div class="bg-zinc-800 p-3 rounded-xl flex space-x-1 items-center">
+                                <div class="w-2 h-2 bg-zinc-400 rounded-full typing-dot"></div>
+                                <div class="w-2 h-2 bg-zinc-400 rounded-full typing-dot"></div>
+                                <div class="w-2 h-2 bg-zinc-400 rounded-full typing-dot"></div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="flex space-x-2">
+                    <input type="text" x-model="chatInput" @keydown.enter="sendAIChat()" placeholder="Ask AI anything..." class="flex-1 bg-zinc-900 border border-zinc-800 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-purple-600">
+                    <button @click="sendAIChat()" class="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 rounded-xl text-sm font-medium transition">Send</button>
+                </div>
+            </div>
+
+            <!-- SETTINGS TAB -->
+            <div x-show="currentTab === 'settings'" class="space-y-6">
+                <header>
+                    <h1 class="text-2xl font-bold tracking-tight">Settings</h1>
+                    <p class="text-xs text-zinc-400">Preferences and account management</p>
+                </header>
+
+                <div class="glass-card p-5 rounded-2xl space-y-4">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-zinc-300">Push Notifications</span>
+                        <button @click="togglePush()" class="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-xs font-medium transition" x-text="pushSubscribed ? 'Disable' : 'Enable'"></button>
+                    </div>
+                    <div class="flex justify-between items-center pt-3 border-t border-zinc-800">
+                        <span class="text-sm text-zinc-300">Offline Cache</span>
+                        <span class="text-xs text-green-400">Active</span>
+                    </div>
+                    <div class="pt-3 border-t border-zinc-800">
+                        <button @click="logout()" class="w-full py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-sm font-medium transition">Log Out</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- BOTTOM NAV -->
+    <nav class="fixed bottom-0 left-0 right-0 glass-nav py-2 px-6 flex justify-between items-center z-40 max-w-4xl mx-auto rounded-t-2xl">
+        <template x-for="tab in tabs">
+            <button @click="switchTab(tab.id)" class="flex flex-col items-center space-y-1 transition" :class="currentTab === tab.id ? 'text-purple-400' : 'text-zinc-500 hover:text-zinc-300'">
+                <span class="text-xs font-medium" x-text="tab.label"></span>
+            </button>
+        </template>
+    </nav>
+
+    <!-- TASK MODAL -->
+    <div x-show="openTaskModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="glass-card w-full max-w-md p-6 rounded-2xl space-y-4">
+            <h3 class="text-lg font-bold">New Task</h3>
+            <input type="text" x-model="newTaskTitle" placeholder="Task title..." class="w-full bg-zinc-900 border border-zinc-800 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-purple-600">
+            <div class="flex justify-end space-x-2 pt-2">
+                <button @click="openTaskModal = false" class="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm transition">Cancel</button>
+                <button @click="createTask()" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-xl text-sm font-medium transition">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function app() {
+            return {
+                currentTab: 'today',
+                loading: true,
+                error: null,
+                toasts: [],
+                tabs: [
+                    { id: 'today', label: 'Today' },
+                    { id: 'practice', label: 'Practice' },
+                    { id: 'progress', label: 'Progress' },
+                    { id: 'ai', label: 'AI' },
+                    { id: 'settings', label: 'Settings' }
+                ],
+                tasks: [],
+                questions: [],
+                currentQuestionIndex: 0,
+                get currentQuestion() {
+                    return this.questions[this.currentQuestionIndex] || {};
+                },
+                chatMessages: [
+                    { role: 'ai', text: 'Hello! I am your Sensei AI tutor. How can I help you learn today?' }
+                ],
+                chatInput: '',
+                aiTyping: false,
+                openTaskModal: false,
+                newTaskTitle: '',
+                pushSubscribed: false,
+
+                init() {
+                    // Hash routing
+                    const hash = window.location.hash.replace('#', '');
+                    if (this.tabs.some(t => t.id === hash)) {
+                        this.currentTab = hash;
+                    }
+                    window.addEventListener('hashchange', () => {
+                        const h = window.location.hash.replace('#', '');
+                        if (this.tabs.some(t => t.id === h)) {
+                            this.currentTab = h;
+                        }
+                    });
+
+                    this.initApp();
+                    
+                    // Register Service Worker
+                    if ('serviceWorker' in navigator) {
+                        navigator.serviceWorker.register('/service-worker.js').catch(err => console.error('SW registration failed:', err));
+                    }
+                },
+
+                switchTab(tabId) {
+                    this.currentTab = tabId;
+                    window.location.hash = tabId;
+                },
+
+                showToast(message, type = 'success') {
+                    const id = Date.now();
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 3000);
+                },
+
+                async initApp() {
+                    this.loading = true;
+                    this.error = null;
+                    try {
+                        // Mocking initial API fetching or fallback to local storage
+                        setTimeout(() => {
+                            this.tasks = [
+                                { id: 1, title: 'Complete Alpine.js Frontend Prototype', completed: true },
+                                { id: 2, title: 'Review Spaced Repetition Queue', completed: false }
+                            ];
+                            this.questions = [
+                                { id: 1, topic: 'JavaScript', prompt: 'What is a closure?', options: ['A function bundled with its lexical environment', 'A loop construct', 'An error handler', 'A database connection'] }
+                            ];
+                            this.loading = false;
+                        }, 500);
+                    } catch (e) {
+                        this.error = 'Failed to load app data. Please try again.';
+                        this.loading = false;
+                    }
+                },
+
+                toggleTask(id) {
+                    const task = this.tasks.find(t => t.id === id);
+                    if (task) {
+                        task.completed = !task.completed;
+                        if (task.completed) {
+                            confetti({ particleCount: 80, spread: 60, origin: { y: 0.8 } });
+                            this.showToast('Task completed!');
+                        }
+                    }
+                },
+
+                createTask() {
+                    if (!this.newTaskTitle.trim()) return;
+                    this.tasks.push({ id: Date.now(), title: this.newTaskTitle, completed: false });
+                    this.newTaskTitle = '';
+                    this.openTaskModal = false;
+                    this.showToast('Task created successfully');
+                },
+
+                deleteTask(id) {
+                    this.tasks = this.tasks.filter(t => t.id !== id);
+                    this.showToast('Task deleted', 'error');
+                },
+
+                submitAnswer(option) {
+                    this.showToast('Correct answer!');
+                    this.currentQuestionIndex = (this.currentQuestionIndex + 1) % this.questions.length;
+                },
+
+                sendAIChat() {
+                    if (!this.chatInput.trim()) return;
+                    const text = this.chatInput;
+                    this.chatMessages.push({ role: 'user', text });
+                    this.chatInput = '';
+                    this.aiTyping = true;
+
+                    setTimeout(() => {
+                        this.aiTyping = false;
+                        this.chatMessages.push({ role: 'ai', text: 'That is a great observation! Let me break down the core concepts for you...' });
+                    }, 1200);
+                },
+
+                togglePush() {
+                    this.pushSubscribed = !this.pushSubscribed;
+                    this.showToast(this.pushSubscribed ? 'Push notifications enabled' : 'Push notifications disabled');
+                },
+
+                logout() {
+                    window.location.reload();
+                },
+
+                initCharts() {
+                    setTimeout(() => {
+                        const ctx = document.getElementById('progressChart');
+                        if (ctx) {
+                            new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                                    datasets: [{
+                                        label: 'Minutes Studied',
+                                        data: [30, 45, 60, 20, 90, 75, 50],
+                                        borderColor: '#8b5cf6',
+                                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                        fill: true,
+                                        tension: 0.4
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: { legend: { display: false } },
+                                    scales: {
+                                        x: { grid: { display: false }, ticks: { color: '#a1a1aa' } },
+                                        y: { grid: { color: '#27272a' }, ticks: { color: '#a1a1aa' } }
+                                    }
+                                }
+                            });
+                        }
+                    }, 100);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

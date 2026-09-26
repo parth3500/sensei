@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sensei-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://0.0.0.0:5000
+      - APP_PASSPHRASE=${APP_PASSPHRASE:-your-secure-passphrase-here}
+    volumes:
+      - sensei-db:/app/data
+      - sensei-drive:/app/Drive_Storage
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sensei-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  sensei-db:
+    name: sensei-sqlite-data
+  sensei-drive:
+    name: sensei-drive-storage
