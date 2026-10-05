@@ -334,4 +334,137 @@ public class AiTutorComponent : IAiTutorComponent
         }
         return list;
     }
+
+    public async Task<List<ExtractedTaskDto>?> ExtractTasksFromImageVisionAsync(string imageBase64, string targetDate)
+    {
+        if (string.IsNullOrWhiteSpace(_apiKey)) return null;
+
+        try
+        {
+            string cleanData = imageBase64.Trim();
+            string dataUrl = cleanData;
+            if (!dataUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            {
+                dataUrl = $"data:image/jpeg;base64,{cleanData}";
+            }
+
+            string visionModel = _defaultModel;
+            string visionEndpoint = _apiBaseUrl;
+
+            if (_apiKey.StartsWith("AQ.", StringComparison.OrdinalIgnoreCase) || _apiKey.StartsWith("AIza", StringComparison.OrdinalIgnoreCase))
+            {
+                visionEndpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions";
+                visionModel = "gemini-1.5-flash";
+            }
+            else if (_apiKey.StartsWith("gsk_", StringComparison.OrdinalIgnoreCase))
+            {
+                visionEndpoint = "https://api.groq.com/openai/v1/chat/completions";
+                visionModel = "llama-3.2-11b-vision-preview";
+            }
+            else if (_apiKey.StartsWith("sk-or-", StringComparison.OrdinalIgnoreCase))
+            {
+                visionEndpoint = "https://openrouter.ai/api/v1/chat/completions";
+                visionModel = "google/gemini-2.5-flash";
+            }
+            else if (_apiKey.StartsWith("xai-", StringComparison.OrdinalIgnoreCase))
+            {
+                visionEndpoint = "https://api.x.ai/v1/chat/completions";
+                visionModel = "grok-2-vision-1212";
+            }
+            else
+            {
+                visionEndpoint = Environment.GetEnvironmentVariable("AI_API_URL") ?? "https://api.openai.com/v1/chat/completions";
+                visionModel = "gpt-4o-mini";
+            }
+
+            var promptText = "Analyze this image of a study schedule, timetable, or todo list. Extract all individual tasks. Return a JSON array with objects containing 'title', 'estMin' (number in minutes), 'priority' ('high'|'medium'|'low'), and 'dueDate' (YYYY-MM-DD)."
+                + $" If no specific target date is shown in the image, default 'dueDate' to '{targetDate}'. Return ONLY the raw JSON array, without any markdown backticks or extra text.";
+
+            var payload = new
+            {
+                model = visionModel,
+                messages = new object[]
+                {
+                    new
+                    {
+                        role = "user",
+                        content = new object[]
+                        {
+                            new { type = "text", text = promptText },
+                            new
+                            {
+                                type = "image_url",
+                                image_url = new { url = dataUrl }
+                            }
+                        }
+                    }
+                },
+                max_tokens = 2000
+            };
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, visionEndpoint);
+            req.Headers.Add("Authorization", $"Bearer {_apiKey}");
+            if (visionEndpoint.Contains("openrouter.ai"))
+            {
+                req.Headers.Add("HTTP-Referer", "https://sensei.study");
+                req.Headers.Add("X-Title", "Sensei Study Tracker");
+            }
+            req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+
+            using var resp = await _httpClient.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return null;
+
+            string jsonStr = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(jsonStr);
+            string rawContent = doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? "";
+
+            rawContent = rawContent.Trim();
+            int startBracket = rawContent.IndexOf('[');
+            int endBracket = rawContent.LastIndexOf(']');
+            if (startBracket >= 0 && endBracket > startBracket)
+            {
+                rawContent = rawContent.Substring(startBracket, endBracket - startBracket + 1);
+            }
+
+            using var itemsDoc = JsonDocument.Parse(rawContent);
+            if (itemsDoc.RootElement.ValueKind != JsonValueKind.Array) return null;
+
+            var tasks = new List<ExtractedTaskDto>();
+            foreach (var el in itemsDoc.RootElement.EnumerateArray())
+            {
+                string title = el.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(title)) continue;
+
+                int estMin = 30;
+                if (el.TryGetProperty("estMin", out var emEl))
+                {
+                    if (emEl.ValueKind == JsonValueKind.Number) estMin = emEl.GetInt32();
+                    else if (int.TryParse(emEl.GetString(), out var parsedMin)) estMin = parsedMin;
+                }
+
+                string priority = "medium";
+                if (el.TryGetProperty("priority", out var pEl))
+                {
+                    string p = (pEl.GetString() ?? "").ToLowerInvariant();
+                    if (p.Contains("high")) priority = "high";
+                    else if (p.Contains("low")) priority = "low";
+                    else priority = "medium";
+                }
+
+                string dueDate = targetDate;
+                if (el.TryGetProperty("dueDate", out var dEl) && !string.IsNullOrWhiteSpace(dEl.GetString()))
+                {
+                    dueDate = dEl.GetString()!;
+                }
+
+                tasks.Add(new ExtractedTaskDto(title.Trim(), estMin > 0 ? estMin : 30, priority, dueDate));
+            }
+
+            return tasks.Count > 0 ? tasks : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

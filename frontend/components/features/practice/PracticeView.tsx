@@ -1,5 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { BookOpen, CheckCircle, XCircle, ArrowRight, BrainCircuit, Sparkles, AlertOctagon, RotateCcw, Flame, Timer, SkipForward } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  BookOpen,
+  CheckCircle,
+  XCircle,
+  ArrowRight,
+  ArrowLeft,
+  BrainCircuit,
+  Sparkles,
+  AlertOctagon,
+  RotateCcw,
+  Flame,
+  Timer,
+  SkipForward,
+  Filter,
+  Layers,
+  Award,
+  SlidersHorizontal
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { Question, ForgettingRiskItem } from '@/types';
 import { Button } from '@/components/ui/Button';
@@ -23,36 +40,61 @@ const parseOptions = (raw: any): string[] => {
       if (Array.isArray(parsed)) return parsed.map(String);
       if (typeof parsed === 'string') return [parsed];
     } catch {
-      // Split newline or semicolon separated fallback
-      const lines = raw.split(/\r?\n/).map((s: string) => s.trim()).filter(Boolean);
+      // Split semicolon or newline fallback
+      const lines = raw.split(/[\r\n;]+/).map((s: string) => s.trim()).filter(Boolean);
       if (lines.length > 1) return lines;
     }
   }
   return [];
 };
 
+// Normalization & prefix-stripping matching AnswerEvaluator.cs
+const cleanText = (s?: string): string => {
+  if (!s) return '';
+  return s
+    .toLowerCase()
+    .replace(/[`"'*]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
+const stripPrefix = (s?: string): string => {
+  const norm = cleanText(s);
+  return norm
+    .replace(/^(?:(?:option\s+)?[\(\[\{]?[a-d0-9][\)\]\}]?[\.\:\-]\s*|(?:option\s+)[a-d0-9]\s+|[\(\[\{][a-d0-9][\)\]\}]\s*|[a-d0-9]\s*[\-\:]\s*)/i, '')
+    .trim();
+};
+
 // Check if an option matches the expected answer (letter 'A', option text, or prefix)
 const isAnswerMatch = (opt: string, idx: number, answer?: string): boolean => {
   if (!answer) return false;
-  const cleanAns = answer.trim().toLowerCase();
-  const cleanOpt = opt.trim().toLowerCase();
+  const cleanAns = cleanText(answer);
+  const cleanOpt = cleanText(opt);
 
   // 1. Direct match
   if (cleanOpt === cleanAns) return true;
 
   // 2. Letter match ('A' for index 0, 'B' for index 1, etc.)
-  const letter = String.fromCharCode(65 + idx).toLowerCase();
-  if (cleanAns === letter) return true;
-
-  // 3. Option prefixed with letter "A) ..." matching answer "A" or text
-  if (cleanOpt.startsWith(`${letter})`) || cleanOpt.startsWith(`${letter}.`) || cleanOpt.startsWith(`${letter}:`)) {
-    const strippedOpt = cleanOpt.replace(/^[a-d0-9][\)\.\:\-]\s*/, '').trim();
-    if (strippedOpt === cleanAns || cleanAns === letter) return true;
+  const letter = String.fromCharCode(97 + idx); // 'a', 'b', 'c', 'd'
+  if (cleanAns === letter || cleanAns === `(${letter})` || cleanAns === `[${letter}]` || cleanAns === `option ${letter}`) {
+    return true;
   }
 
-  // 4. Answer has letter prefix matching clean option
-  const strippedAns = cleanAns.replace(/^[a-d0-9][\)\.\:\-]\s*/, '').trim();
-  if (strippedAns === cleanOpt) return true;
+  // 3. Option prefixed with letter (e.g. "A) Round Robin" or "A. Round Robin")
+  const strippedOpt = stripPrefix(cleanOpt);
+  const strippedAns = stripPrefix(cleanAns);
+
+  if (strippedOpt && strippedAns && strippedOpt === strippedAns) {
+    return true;
+  }
+
+  if (strippedOpt && (strippedOpt === cleanAns || cleanAns === letter)) {
+    return true;
+  }
+
+  if (strippedAns && strippedAns === cleanOpt) {
+    return true;
+  }
 
   return false;
 };
@@ -64,6 +106,10 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
   onRefresh,
 }) => {
   const [mode, setMode] = useState<'standard' | 'forgetting_risk'>('standard');
+  const [selectedTopic, setSelectedTopic] = useState<string>('all');
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>('all');
+  const [dueOnlyFilter, setDueOnlyFilter] = useState<boolean>(false);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [confidence, setConfidence] = useState(3);
@@ -72,22 +118,58 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
   const [loading, setLoading] = useState(false);
   const [startTime, setStartTime] = useState<number>(Date.now());
   const [elapsedSec, setElapsedSec] = useState<number>(0);
+
+  // Performance & Streak Tracking
   const [streak, setStreak] = useState<number>(0);
   const [bestStreak, setBestStreak] = useState<number>(0);
+  const [sessionAttempts, setSessionAttempts] = useState<number>(0);
+  const [sessionCorrect, setSessionCorrect] = useState<number>(0);
 
-  const activeQuestionList = mode === 'forgetting_risk'
-    ? forgettingRisks.map((f) => f.question)
-    : questions;
+  // Locked question during review (prevents question shift when forgettingRisks in props updates!)
+  const [lockedQuestion, setLockedQuestion] = useState<Question | null>(null);
+  const [lockedRisk, setLockedRisk] = useState<ForgettingRiskItem | null>(null);
 
-  const currentQ = activeQuestionList.length > 0 ? activeQuestionList[currentIndex] : null;
-  const currentRisk = mode === 'forgetting_risk' ? forgettingRisks[currentIndex] : null;
+  // Extract distinct topics for dropdown
+  const availableTopics = useMemo(() => {
+    const set = new Set<string>();
+    questions.forEach((q) => {
+      if (q.topic) set.add(q.topic);
+    });
+    return Array.from(set).sort();
+  }, [questions]);
+
+  // Filtered Question List
+  const activeQuestionList = useMemo(() => {
+    let list: Question[] = [];
+    if (mode === 'forgetting_risk') {
+      list = forgettingRisks.map((f) => f.question);
+    } else {
+      list = questions;
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    return list.filter((q) => {
+      if (!q) return false;
+      if (selectedTopic !== 'all' && q.topic !== selectedTopic) return false;
+      if (selectedDifficulty !== 'all' && q.difficulty !== selectedDifficulty) return false;
+      if (dueOnlyFilter) {
+        if (q.srDue && q.srDue > todayStr && q.srReps > 0) return false;
+      }
+      return true;
+    });
+  }, [mode, questions, forgettingRisks, selectedTopic, selectedDifficulty, dueOnlyFilter]);
+
+  // Current question is either locked (during review) or selected by index
+  const currentQ = lockedQuestion || (activeQuestionList.length > 0 ? activeQuestionList[currentIndex] : null);
+  const currentRisk = lockedRisk || (mode === 'forgetting_risk' ? forgettingRisks[currentIndex] : null);
   const options: string[] = parseOptions(currentQ?.optionsJson);
 
   // Reset timer on question change
   useEffect(() => {
     setStartTime(Date.now());
     setElapsedSec(0);
-  }, [currentIndex, mode]);
+  }, [currentIndex, mode, selectedTopic, selectedDifficulty, dueOnlyFilter]);
 
   // Live timer for question attempt
   useEffect(() => {
@@ -106,14 +188,20 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
   const handleSubmit = useCallback(async () => {
     if (!currentQ || !selectedOption || submitted || loading) return;
 
+    // Lock active question so it stays stable while submitting and reviewing
+    setLockedQuestion(currentQ);
+    if (currentRisk) setLockedRisk(currentRisk);
+
     setLoading(true);
     const timeSpent = Math.max(1, Math.round((Date.now() - startTime) / 1000));
     try {
       const correct = await onSubmitAnswer(currentQ.id, selectedOption, confidence, timeSpent);
       setIsCorrect(correct);
       setSubmitted(true);
+      setSessionAttempts((prev) => prev + 1);
 
       if (correct) {
+        setSessionCorrect((prev) => prev + 1);
         setStreak((prev) => {
           const next = prev + 1;
           setBestStreak((b) => Math.max(b, next));
@@ -137,15 +225,19 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [currentQ, selectedOption, submitted, loading, startTime, onSubmitAnswer, confidence]);
+  }, [currentQ, currentRisk, selectedOption, submitted, loading, startTime, onSubmitAnswer, confidence]);
 
   const handleNext = useCallback(() => {
+    // Unlock question for the next step
+    setLockedQuestion(null);
+    setLockedRisk(null);
     setSelectedOption(null);
     setSubmitted(false);
     setIsCorrect(null);
     setConfidence(3);
     setStartTime(Date.now());
     setElapsedSec(0);
+
     if (currentIndex < activeQuestionList.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -154,13 +246,30 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     }
   }, [currentIndex, activeQuestionList.length, onRefresh]);
 
+  const handlePrev = useCallback(() => {
+    if (currentIndex > 0) {
+      setLockedQuestion(null);
+      setLockedRisk(null);
+      setSelectedOption(null);
+      setSubmitted(false);
+      setIsCorrect(null);
+      setConfidence(3);
+      setStartTime(Date.now());
+      setElapsedSec(0);
+      setCurrentIndex(currentIndex - 1);
+    }
+  }, [currentIndex]);
+
   const handleSkip = useCallback(() => {
+    setLockedQuestion(null);
+    setLockedRisk(null);
     setSelectedOption(null);
     setSubmitted(false);
     setIsCorrect(null);
     setConfidence(3);
     setStartTime(Date.now());
     setElapsedSec(0);
+
     if (currentIndex < activeQuestionList.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
@@ -172,6 +281,8 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
   const handleSwitchMode = (newMode: 'standard' | 'forgetting_risk') => {
     setMode(newMode);
     setCurrentIndex(0);
+    setLockedQuestion(null);
+    setLockedRisk(null);
     setSelectedOption(null);
     setSubmitted(false);
     setIsCorrect(null);
@@ -180,16 +291,26 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     setElapsedSec(0);
   };
 
-  // Keyboard shortcut listener (1-4 / A-D to select, S/Esc to skip, Enter to check / next)
+  const handleResetFilters = () => {
+    setSelectedTopic('all');
+    setSelectedDifficulty('all');
+    setDueOnlyFilter(false);
+    setCurrentIndex(0);
+  };
+
+  // Keyboard shortcut listener (1-4 / A-D to select, S/Esc to skip, Enter to check / next, P for prev)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if focus is in an input or textarea
-      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) return;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) return;
 
       if (!submitted) {
         if (e.key.toLowerCase() === 's' || e.key === 'Escape') {
           e.preventDefault();
           handleSkip();
+        } else if (e.key.toLowerCase() === 'p' && currentIndex > 0) {
+          e.preventDefault();
+          handlePrev();
         } else if (['1', '2', '3', '4'].includes(e.key)) {
           const idx = parseInt(e.key) - 1;
           if (options[idx]) handleSelectOption(options[idx]);
@@ -201,7 +322,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
           handleSubmit();
         }
       } else {
-        if (e.key === 'Enter' || e.key === ' ') {
+        if (e.key === 'Enter') {
           e.preventDefault();
           handleNext();
         }
@@ -210,11 +331,13 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [submitted, options, selectedOption, loading, handleSubmit, handleNext, handleSkip]);
+  }, [submitted, options, selectedOption, loading, handleSubmit, handleNext, handleSkip, handlePrev, currentIndex]);
+
+  const sessionAccuracy = sessionAttempts > 0 ? Math.round((sessionCorrect / sessionAttempts) * 100) : 0;
 
   return (
     <div className="space-y-6 pb-20">
-      {/* Header */}
+      {/* ── Header & Mode Switcher ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
@@ -258,6 +381,114 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
         </div>
       </div>
 
+      {/* ── Live Session Stats Bar ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 rounded-xl bg-zinc-900/70 border border-surface-border text-xs">
+        <div className="flex items-center gap-2">
+          <Award className="w-4 h-4 text-accent shrink-0" />
+          <div>
+            <span className="text-zinc-500 text-[10px] block">Session Score</span>
+            <span className="text-zinc-200 font-bold font-mono">
+              {sessionCorrect} / {sessionAttempts} ({sessionAccuracy}%)
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Flame className="w-4 h-4 text-amber-400 shrink-0" />
+          <div>
+            <span className="text-zinc-500 text-[10px] block">Current / Best</span>
+            <span className="text-zinc-200 font-bold font-mono">
+              {streak} / {bestStreak}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-purple-400 shrink-0" />
+          <div>
+            <span className="text-zinc-500 text-[10px] block">Questions In Set</span>
+            <span className="text-zinc-200 font-bold font-mono">
+              {activeQuestionList.length} total
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Timer className="w-4 h-4 text-emerald-400 shrink-0" />
+          <div>
+            <span className="text-zinc-500 text-[10px] block">Question Time</span>
+            <span className="text-zinc-200 font-bold font-mono">
+              {elapsedSec}s
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Filters Bar (Topic, Difficulty, Due-Only) ── */}
+      <div className="p-3 rounded-xl bg-zinc-900/50 border border-surface-border/70 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1.5 text-zinc-400 font-medium">
+            <Filter className="w-3.5 h-3.5 text-accent" />
+            <span>Filters:</span>
+          </div>
+
+          {/* Topic Dropdown */}
+          <select
+            value={selectedTopic}
+            onChange={(e) => {
+              setSelectedTopic(e.target.value);
+              setCurrentIndex(0);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-accent"
+          >
+            <option value="all">All Topics ({availableTopics.length})</option>
+            {availableTopics.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic}
+              </option>
+            ))}
+          </select>
+
+          {/* Difficulty Dropdown */}
+          <select
+            value={selectedDifficulty}
+            onChange={(e) => {
+              setSelectedDifficulty(e.target.value);
+              setCurrentIndex(0);
+            }}
+            className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 text-xs focus:outline-none focus:border-accent"
+          >
+            <option value="all">All Difficulties</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
+
+          {/* Due Only Toggle */}
+          <label className="flex items-center gap-1.5 cursor-pointer text-zinc-400 hover:text-zinc-200 select-none">
+            <input
+              type="checkbox"
+              checked={dueOnlyFilter}
+              onChange={(e) => {
+                setDueOnlyFilter(e.target.checked);
+                setCurrentIndex(0);
+              }}
+              className="w-3.5 h-3.5 rounded text-accent accent-accent cursor-pointer"
+            />
+            <span>Due for review only</span>
+          </label>
+        </div>
+
+        {(selectedTopic !== 'all' || selectedDifficulty !== 'all' || dueOnlyFilter) && (
+          <button
+            onClick={handleResetFilters}
+            className="text-[11px] text-accent hover:underline font-semibold"
+          >
+            Reset Filters
+          </button>
+        )}
+      </div>
+
       {/* Forgetting Curve Risk Banner */}
       {mode === 'forgetting_risk' && currentRisk && (
         <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-rose-300">
@@ -290,14 +521,25 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
             <Sparkles className="w-7 h-7" />
           </div>
           <h3 className="text-xl font-bold text-white">
-            {mode === 'forgetting_risk' ? 'No Concepts at Risk!' : 'All Caught Up!'}
+            {selectedTopic !== 'all' || selectedDifficulty !== 'all' || dueOnlyFilter
+              ? 'No Questions Match Filters'
+              : mode === 'forgetting_risk'
+              ? 'No Concepts at Risk!'
+              : 'All Caught Up!'}
           </h3>
           <p className="text-sm text-zinc-400 max-w-sm mx-auto">
-            {mode === 'forgetting_risk'
+            {selectedTopic !== 'all' || selectedDifficulty !== 'all' || dueOnlyFilter
+              ? 'Try widening your filters or selecting a different topic to view more practice questions.'
+              : mode === 'forgetting_risk'
               ? 'Your memory retention across studied topics is strong. Keep reviewing regularly to prevent decay.'
               : 'No more questions due for review right now. Come back tomorrow or ingest notes from Google Drive!'}
           </p>
           <div className="flex items-center justify-center gap-2 pt-2">
+            {(selectedTopic !== 'all' || selectedDifficulty !== 'all' || dueOnlyFilter) && (
+              <Button onClick={handleResetFilters} variant="secondary" size="sm">
+                Clear Filters
+              </Button>
+            )}
             <Button
               onClick={() => handleSwitchMode(mode === 'standard' ? 'forgetting_risk' : 'standard')}
               variant="secondary"
@@ -306,7 +548,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
               Switch to {mode === 'standard' ? 'At-Risk Recall' : 'Due Queue'}
             </Button>
             <Button onClick={onRefresh} variant="ghost" size="sm">
-              <RotateCcw className="w-4 h-4" />
+              <RotateCcw className="w-4 h-4 mr-1" />
               Refresh
             </Button>
           </div>
@@ -315,7 +557,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
         /* Question Card */
         <Card className="space-y-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Badge variant="purple">{currentQ.topic}</Badge>
               <Badge
                 variant={
@@ -357,9 +599,9 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
               let btnStyle = 'border-surface-border bg-zinc-900/60 hover:border-accent/40 text-zinc-200';
               if (submitted) {
                 if (isThisAnswer) {
-                  btnStyle = 'border-emerald-500 bg-emerald-500/15 text-emerald-200 font-semibold';
+                  btnStyle = 'border-emerald-500 bg-emerald-500/15 text-emerald-200 font-semibold ring-1 ring-emerald-500/50';
                 } else if (isSelected && !isCorrect) {
-                  btnStyle = 'border-rose-500 bg-rose-500/15 text-rose-200';
+                  btnStyle = 'border-rose-500 bg-rose-500/15 text-rose-200 ring-1 ring-rose-500/50';
                 } else {
                   btnStyle = 'border-zinc-800 bg-zinc-900/20 text-zinc-500';
                 }
@@ -410,10 +652,21 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
             </div>
           )}
 
-          {/* Submit or Skip Buttons */}
+          {/* Submit, Skip, Previous Buttons */}
           <div className="pt-2">
             {!submitted ? (
               <div className="flex items-center gap-2">
+                {currentIndex > 0 && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handlePrev}
+                    className="px-3 text-xs text-zinc-400 hover:text-white border-zinc-800 bg-zinc-900/80"
+                    title="Previous Question (Press P)"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                  </Button>
+                )}
                 <Button
                   onClick={handleSubmit}
                   disabled={!selectedOption || loading}
@@ -463,10 +716,23 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                   </div>
                 </div>
 
-                <Button onClick={handleNext} className="w-full">
-                  Next Question
-                  <ArrowRight className="w-4 h-4 ml-1.5" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  {currentIndex > 0 && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handlePrev}
+                      className="px-4 text-xs text-zinc-400 hover:text-white border-zinc-800 bg-zinc-900/80"
+                    >
+                      <ArrowLeft className="w-4 h-4 mr-1" />
+                      Prev
+                    </Button>
+                  )}
+                  <Button onClick={handleNext} className="flex-1">
+                    Next Question
+                    <ArrowRight className="w-4 h-4 ml-1.5" />
+                  </Button>
+                </div>
               </div>
             )}
           </div>

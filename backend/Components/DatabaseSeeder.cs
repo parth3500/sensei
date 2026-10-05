@@ -24,7 +24,8 @@ public static class DatabaseSeeder
                 ("Compilers", "GATE CS", 0.8, "#6366f1"),
                 ("Discrete Mathematics", "GATE CS", 1.0, "#14b8a6"),
                 ("General Aptitude", null, 0.8, "#84cc16"),
-                ("Engineering Mathematics", null, 1.0, "#a855f7")
+                ("Engineering Mathematics", null, 1.0, "#a855f7"),
+                ("Java & OOP", null, 1.2, "#f89820")
             };
 
             foreach (var (name, parent, weight, color) in subjects)
@@ -42,6 +43,22 @@ public static class DatabaseSeeder
                     VALUES (@name, @parentId, @weight, @color, datetime('now'))
                 ", ("@name", name), ("@parentId", parentId), ("@weight", weight), ("@color", color));
             }
+        }
+
+        // Ensure "Java & OOP" subject exists
+        var javaSubRow = db.QuerySingle("SELECT id FROM subjects WHERE name = @name", ("@name", "Java & OOP"));
+        int? javaSubjectId = null;
+        if (javaSubRow == null || javaSubRow["id"] == null)
+        {
+            var newId = db.InsertAndGetId(@"
+                INSERT INTO subjects (name, parent_id, weight, color, created_at)
+                VALUES (@name, NULL, 1.2, '#f89820', datetime('now'))
+            ", ("@name", "Java & OOP"));
+            javaSubjectId = (int)newId;
+        }
+        else
+        {
+            javaSubjectId = Convert.ToInt32(javaSubRow["id"]);
         }
 
         // 2. Seed Reminders
@@ -407,6 +424,126 @@ public static class DatabaseSeeder
                 new[] { "All palindromes { w w^R | w in {0,1}* }", "Even length strings { w | |w| mod 2 = 0 }", "Matched parentheses { a^n b^n | n >= 0 }", "Equal number of 0s and 1s" },
                 "All palindromes { w w^R | w in {0,1}* }",
                 "Even palindromes without a middle marker require guessing the center point nondeterministically, which cannot be done by a deterministic PDA."
+            ),
+            (
+                "Java - Collections",
+                "medium",
+                "In Java 8 and later, what data structure does HashMap transition into for a bucket when the number of elements exceeds TREEIFY_THRESHOLD (8) and table capacity is at least 64?",
+                new[] { "Red-Black Tree", "AVL Tree", "B+ Tree", "SkipList" },
+                "Red-Black Tree",
+                "In Java 8, when a bucket's collision chain exceeds TREEIFY_THRESHOLD (8) and the table capacity is >= 64 (MIN_TREEIFY_CAPACITY), HashMap replaces the linked list node chain with a balanced Red-Black Tree (TreeNode), improving worst-case search complexity from O(n) to O(log n)."
+            ),
+            (
+                "Java - Concurrency",
+                "medium",
+                "In the Java Memory Model (JMM), which keyword establishes a happens-before relationship ensuring memory visibility without acquiring an exclusive monitor lock?",
+                new[] { "volatile", "transient", "final", "strictfp" },
+                "volatile",
+                "A write to a volatile field happens-before every subsequent read of that same field. It acts as a memory barrier preventing compiler reordering and flushing changes to main memory without acquiring monitor locks."
+            ),
+            (
+                "Java - Concurrency",
+                "hard",
+                "In ConcurrentHashMap (Java 8+), how is thread-safe insertion implemented for empty table buckets?",
+                new[] { "Compare-And-Swap (CAS) on null node pointer", "Segment-level ReentrantLock", "Table-wide synchronized block", "ReadWriteLock" },
+                "Compare-And-Swap (CAS) on null node pointer",
+                "Java 8 redesigned ConcurrentHashMap removing the Java 7 Segment lock array. If a bucket bin is empty, it initializes the bin using lock-free CAS (Unsafe.compareAndSwapObject / VarHandle). If collision occurs, it synchronizes only on the head node of that bin."
+            ),
+            (
+                "Java - JVM Internals",
+                "hard",
+                "Which garbage collector in modern OpenJDK aims for sub-millisecond maximum pause times regardless of heap size, utilizing colored pointers and load barriers?",
+                new[] { "ZGC (Z Garbage Collector)", "G1 GC", "Parallel GC", "Serial GC" },
+                "ZGC (Z Garbage Collector)",
+                "ZGC is a low-latency concurrent generational garbage collector introduced in JDK 11/15. It performs all heavy phases concurrently (marking, relocation) using 64-bit colored pointers and load barriers to achieve sub-millisecond max pause times even on multi-terabyte heaps."
+            ),
+            (
+                "Java - JVM Internals",
+                "medium",
+                "In Java 8 and later, what replaced PermGen (Permanent Generation) for storing class metadata, and where is it allocated?",
+                new[] { "Metaspace, allocated in native OS memory", "Eden Space, allocated in young generation heap", "Code Cache, allocated in CPU registers", "Survivor Space, allocated in old generation heap" },
+                "Metaspace, allocated in native OS memory",
+                "Java 8 completely removed PermGen and replaced it with Metaspace. Metaspace stores class definitions, runtime constant pools, and method metadata in native process memory (unlimited by default, configurable via -XX:MaxMetaspaceSize), preventing java.lang.OutOfMemoryError: PermGen space."
+            ),
+            (
+                "Java - Streams & Lambdas",
+                "medium",
+                "In Java Stream API, which of the following operations is a stateful intermediate operation?",
+                new[] { "sorted()", "map()", "filter()", "flatMap()" },
+                "sorted()",
+                "sorted() must buffer all upstream elements to perform comparisons before emitting the first element, making it a stateful intermediate operation. In contrast, map(), filter(), and flatMap() are stateless intermediate operations that process elements lazily one-by-one."
+            ),
+            (
+                "Java - Streams & Lambdas",
+                "easy",
+                "What is the result of invoking Optional.of(null) in Java 8+?",
+                new[] { "NullPointerException is thrown immediately", "Returns an empty Optional (Optional.empty())", "Returns Optional containing null", "Returns null" },
+                "NullPointerException is thrown immediately",
+                "Optional.of(value) strictly requires a non-null argument and immediately throws NullPointerException if value is null. To safely wrap a potentially null reference, Optional.ofNullable(value) must be used."
+            ),
+            (
+                "Java - OOP Concepts",
+                "medium",
+                "What happens if a class implements two interfaces that both declare identical default methods with the exact same signature?",
+                new[] { "Compile-time error unless the implementing class explicitly overrides the method", "The first declared interface in the 'implements' clause takes precedence", "The JVM resolves it at runtime via dynamic dispatch", "Both default implementations execute sequentially" },
+                "Compile-time error unless the implementing class explicitly overrides the method",
+                "Java compiler flags this as an ambiguous diamond inheritance conflict at compile-time. The implementing class must explicitly override the conflicting method and can optionally delegate using InterfaceName.super.methodName()."
+            ),
+            (
+                "Java - Collections",
+                "easy",
+                "What is the contract between equals() and hashCode() in Java?",
+                new[] { "If o1.equals(o2) is true, then o1.hashCode() must equal o2.hashCode()", "If o1.hashCode() == o2.hashCode(), then o1.equals(o2) must be true", "Both hashCode() and equals() must be identical in return type", "No relationship exists" },
+                "If o1.equals(o2) is true, then o1.hashCode() must equal o2.hashCode()",
+                "The fundamental Java Object contract states: if two objects are equal according to equals(Object), their hashCode() MUST return the same integer. The converse is false: two unequal objects may have the same hash code (hash collision)."
+            ),
+            (
+                "Java - Exception Handling",
+                "medium",
+                "In a try-with-resources statement, in what order are the AutoCloseable resources closed?",
+                new[] { "Reverse order of their creation/declaration", "Same order of their creation/declaration", "Arbitrary non-deterministic order", "Simultaneously in parallel threads" },
+                "Reverse order of their creation/declaration",
+                "try (Resource r1 = ...; Resource r2 = ...) closes resources in reverse order (r2.close() followed by r1.close()). This mirrors stack unwinding and ensures dependent downstream resources close before their underlying dependencies."
+            ),
+            (
+                "Java - Core Concepts",
+                "easy",
+                "Where are String literals stored in Java, and what is the effect of invoking s.intern()?",
+                new[] { "In the String Constant Pool; returns canonical reference from pool", "On the thread stack; prevents garbage collection", "In Metaspace; converts String to char array", "In CPU cache; accelerates substring operations" },
+                "In the String Constant Pool; returns canonical reference from pool",
+                "String literals are stored in the String Constant Pool (allocated inside Java heap memory since Java 7). Calling s.intern() checks the pool: if an equal string exists, its reference is returned; otherwise s is added to the pool and returned."
+            ),
+            (
+                "Java - Generics",
+                "medium",
+                "According to the PECS rule (Producer Extends, Consumer Super) in Java Generics, which wildcard should be used when a collection produces data to be read?",
+                new[] { "<? extends T>", "<? super T>", "<?>", "<T>" },
+                "<? extends T>",
+                "PECS principle (Joshua Bloch): 'Producer Extends, Consumer Super'. If your method reads instances from a collection (it produces items), use <? extends T>. If your method inserts instances into a collection (it consumes items), use <? super T>."
+            ),
+            (
+                "Java - Concurrency",
+                "medium",
+                "What is the key difference between ExecutorService.submit(Callable) and ExecutorService.execute(Runnable)?",
+                new[] { "submit() returns a Future allowing result retrieval and exception inspection; execute() returns void", "execute() runs on background threads whereas submit() runs synchronously on calling thread", "submit() is deprecated in favor of execute()", "execute() supports timeouts whereas submit() does not" },
+                "submit() returns a Future allowing result retrieval and exception inspection; execute() returns void",
+                "submit() accepts Callable<T> or Runnable and returns a Future<T> which captures return values and thrown exceptions via future.get(). execute() is a void method from Executor interface that cannot return values."
+            ),
+            (
+                "Java - OOP Concepts",
+                "easy",
+                "Can a static method be overridden in Java?",
+                new[] { "No, static methods cannot be overridden; re-declaring them in a subclass is method hiding", "Yes, static methods participate in runtime polymorphism via dynamic dispatch", "Yes, but only if declared with public access modifier", "Yes, if the superclass method is not marked final" },
+                "No, static methods cannot be overridden; re-declaring them in a subclass is method hiding",
+                "Static methods are bound at compile time based on the reference type (invokestatic), not runtime object instance. If a subclass defines a static method with the same signature, it hides (shadows) the parent method rather than overriding it."
+            ),
+            (
+                "Java - Memory Model",
+                "easy",
+                "In Java, what makes an object eligible for garbage collection?",
+                new[] { "It is unreachable through any chain of strong references from GC roots", "Its reference count decrements to zero", "Its destructor method is called immediately", "It is moved to Metaspace" },
+                "It is unreachable through any chain of strong references from GC roots",
+                "HotSpot JVM uses tracing garbage collection (root set reachability), NOT reference counting. An object is eligible for GC when it cannot be reached by traversing reference chains originating from GC roots (local stack variables, active thread references, static class fields, JNI handles)."
             )
         };
 

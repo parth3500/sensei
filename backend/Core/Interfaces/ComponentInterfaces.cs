@@ -28,8 +28,10 @@ public interface ITaskComponent
     List<TaskItem> GetTasks(string? status = null, string? date = null, int? subjectId = null);
     TaskItem? GetTaskById(int id);
     TaskItem CreateTask(TaskCreateRequest request);
+    List<TaskItem> CreateTasksBatch(List<TaskCreateRequest> requests);
     TaskItem? UpdateTask(int id, TaskUpdateRequest request);
     bool DeleteTask(int id);
+    Task<ScanScheduleImageResponse> ScanScheduleImageAsync(string imageBase64, string? targetDate = null);
 }
 
 public interface ISpacedRepetitionComponent
@@ -62,6 +64,7 @@ public interface IAiTutorComponent
     Task<List<Question>> GenerateQuestionsAsync(GenerateQuestionsRequest request);
     Task<object> GenerateStudyPlanAsync(StudyPlanRequest request);
     List<AiMessage> GetChatHistory(int limit = 50);
+    Task<List<ExtractedTaskDto>?> ExtractTasksFromImageVisionAsync(string imageBase64, string targetDate);
 }
 
 public interface IRemindersComponent

@@ -39,5 +39,8 @@ yarn-error.log*
 .env.local
 .env.*.local
 
-# Internal logs
+# Internal logs and run state
 *.log
+*.apk
+.run/
+

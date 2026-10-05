@@ -179,6 +179,33 @@ export default function SenseiApp() {
     setStats(updatedStats);
   };
 
+  const handleBatchAddTasks = async (
+    tasksData: Array<{
+      title: string;
+      priority: string;
+      estMin?: number;
+      dueDate?: string;
+    }>
+  ) => {
+    try {
+      const res = await api.batchCreateTasks(tasksData);
+      if (res && res.tasks && res.tasks.length > 0) {
+        setTasks((prev) => [...res.tasks, ...prev]);
+      } else {
+        const refreshedTasks = await api.getTasks();
+        setTasks(refreshedTasks);
+      }
+    } catch {
+      for (const item of tasksData) {
+        await api.createTask(item);
+      }
+      const refreshedTasks = await api.getTasks();
+      setTasks(refreshedTasks);
+    }
+    const updatedStats = await api.getOverview();
+    setStats(updatedStats);
+  };
+
   const handleDeleteTask = async (id: number) => {
     setTasks((prev) => prev.filter((t) => t.id !== id));
     await api.deleteTask(id);
@@ -387,6 +414,7 @@ export default function SenseiApp() {
             tasks={tasks}
             onToggleTask={handleToggleTask}
             onAddTask={handleAddTask}
+            onBatchAddTasks={handleBatchAddTasks}
             onDeleteTask={handleDeleteTask}
           />
         )}

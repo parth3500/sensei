@@ -29,17 +29,18 @@ public class FormulaVaultComponent : IFormulaVaultComponent
                 example TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE VIEW IF NOT EXISTS formula_items AS SELECT * FROM formula_vault;
         ");
 
-        var count = _db.QueryScalar<long>("SELECT COUNT(*) FROM formula_vault;");
-        if (count == 0)
-        {
-            SeedFormulas();
-        }
+        SeedFormulas();
     }
 
     private void SeedFormulas()
     {
+        var existingTitles = new HashSet<string>(
+            _db.Query("SELECT title FROM formula_vault;").ConvertAll(r => r["title"]?.ToString() ?? "")
+        );
+
         var initialFormulas = new[]
         {
             (
@@ -121,22 +122,65 @@ public class FormulaVaultComponent : IFormulaVaultComponent
                 Description: "Node capacity equations for balanced multiway B+ tree index structures.",
                 KeyVariables: "m = Tree order (maximum child pointers per internal node)",
                 Example: "Block = 1024B, Pointer = 8B, Key = 16B: m × 8 + (m - 1) × 16 ≤ 1024 => 24m ≤ 1040 => m = 43."
+            ),
+            (
+                Category: "Java",
+                Title: "Java Collections Framework Hierarchy & Time Complexities",
+                Formula: "List | Set | Map | Queue Big-O Performance Cheat Sheet",
+                Description: "### Java Collections Framework Complexity & Characteristics Matrix\n\n| Interface | Concrete Class | Add | Get / Contains | Remove | Iteration Order | Thread-Safe | Notes |\n|:---|:---|:---|:---|:---|:---|:---|:---|\n| **List** | `ArrayList` | O(1) amortized | O(1) index / O(n) contains | O(n) | Insertion order | No | Resizes by 50% (1.5x). Contiguous array, excellent cache locality. |\n| **List** | `LinkedList` | O(1) | O(n) (O(1) head/tail) | O(n) (O(1) via Iterator) | Insertion order | No | Doubly-linked list. 24-32 bytes pointer overhead per node. |\n| **List** | `CopyOnWriteArrayList` | O(n) | O(1) | O(n) | Snapshot order | Yes | Mutative operations clone entire underlying array. Fast, lock-free reads. |\n| **Queue / Deque** | `ArrayDeque` | O(1) amortized | O(n) contains | O(1) head/tail | FIFO / LIFO order | No | Circular array. Faster than Stack and LinkedList for stacks/queues. |\n| **Queue** | `PriorityQueue` | O(log n) | O(1) peek / O(n) contains | O(log n) poll | Min-heap order | No | Unbounded priority heap backed by array. Null not permitted. |\n| **Set** | `HashSet` | O(1) | O(1) | O(1) | No guarantee | No | Backed by HashMap. Elements stored as keys with dummy PRESENT value. |\n| **Set** | `LinkedHashSet` | O(1) | O(1) | O(1) | Insertion order | No | Backed by LinkedHashMap. Maintains doubly-linked list across hash buckets. |\n| **Set** | `TreeSet` | O(log n) | O(log n) | O(log n) | Natural / Comparator | No | Backed by NavigableMap (Red-Black tree). Keys must be Comparable. |\n| **Map** | `HashMap` | O(1) avg / O(log n) worst | O(1) avg / O(log n) worst | O(1) avg / O(log n) worst | Unspecified | No | Default load factor 0.75, capacity 16. Treeifies bucket at 8 nodes if capacity >= 64. |\n| **Map** | `LinkedHashMap` | O(1) | O(1) | O(1) | Insertion or Access order | No | Ideal for LRU cache implementations (removeEldestEntry). |\n| **Map** | `TreeMap` | O(log n) | O(log n) | O(log n) | Key-sorted order | No | Red-Black Tree implementation of NavigableMap. |\n| **Map** | `ConcurrentHashMap` | O(1) avg | O(1) lock-free read | O(1) CAS / Synchronized | Unspecified | Yes | CAS on empty bins + bin-level synchronized. Highly scalable. |",
+                KeyVariables: "loadFactor = 0.75, initialCapacity = 16, TREEIFY_THRESHOLD = 8, UNTREEIFY_THRESHOLD = 6, MIN_TREEIFY_CAPACITY = 64",
+                Example: "// LRU Cache using LinkedHashMap:\nMap<String, String> lru = new LinkedHashMap<>(16, 0.75f, true) {\n    @Override\n    protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {\n        return size() > 100;\n    }\n};\n// Concurrent atomic counter:\nConcurrentMap<String, LongAdder> counter = new ConcurrentHashMap<>();\ncounter.computeIfAbsent(\"hits\", k -> new LongAdder()).increment();"
+            ),
+            (
+                Category: "Java",
+                Title: "JVM Memory Architecture & Garbage Collectors",
+                Formula: "Heap (Young: Eden + S0 + S1, Old/Tenured) + Metaspace (Native Off-Heap)",
+                Description: "### JVM Runtime Data Areas & Generation Layout\n\n```\n+-------------------------------------------------------------------------------+\n|                                  JVM HEAP                                     |\n|  +-----------------------------+  +----------------------------------------+  |\n|  |       Young Generation      |  |             Old Generation             |  |\n|  |  +--------+ +----+ +----+   |  |               (Tenured)                |  |\n|  |  |  Eden  | | S0 | | S1 |   |  |  Long-lived objects promoted after     |  |\n|  |  | Space  | |From| | To |   |  |  surviving MaxTenuringThreshold (15)  |  |\n|  |  +--------+ +----+ +----+   |  |                                        |  |\n|  +-----------------------------+  +----------------------------------------+  |\n+-------------------------------------------------------------------------------+\n|                             NATIVE MEMORY (Off-Heap)                          |\n|  +-------------------------------+  +-------------------+  +---------------+  |\n|  |           Metaspace           |  | Thread Stacks     |  | Direct Byte   |  |\n|  | Class metadata, methods,      |  | Frames, locals,   |  | Buffers       |  |\n|  | bytecode (replaced PermGen)   |  | operands, PC      |  | (NIO channels)|  |\n|  +-------------------------------+  +-------------------+  +---------------+  |\n+-------------------------------------------------------------------------------+\n```\n\n### Generational Lifecycles\n- **Eden Space:** All newly allocated objects start here (often via Thread-Local Allocation Buffers - TLABs).\n- **Minor GC:** When Eden fills, Minor GC pauses threads (STW), clears dead objects, and copies live objects to Survivor space (S0 or S1).\n- **Object Aging:** Objects swap between Survivor spaces during Minor GCs, incrementing age until `-XX:MaxTenuringThreshold=15`. Survivors reaching the threshold are promoted to Tenured (Old Gen).\n- **Major / Full GC:** Cleans the Old Generation (and Metaspace if needed). Usually longer pause times than Minor GC.\n\n### Garbage Collector Comparison Matrix\n| Collector | JVM Flag | Target Workload | Algorithms Used | STW Pause Characteristics |\n|:---|:---|:---|:---|:---|\n| **Serial GC** | `-XX:+UseSerialGC` | Single-core, small heaps (< 100MB), embedded | Young: Mark-Copy; Old: Mark-Sweep-Compact | High pause per GC; single-threaded. |\n| **Parallel GC** | `-XX:+UseParallelGC` | High-throughput batch processing | Young: Multi-threaded Mark-Copy; Old: Multi-threaded Mark-Compact | High throughput, non-deterministic pause times. |\n| **G1 GC** (Default) | `-XX:+UseG1GC` | Multi-core servers with heaps 4GB to 64GB+ | Region-based (1-32MB blocks); Incremental evacuation | Predictable pauses (-XX:MaxGCPauseMillis=200). |\n| **ZGC** | `-XX:+UseZGC` | Ultra-low latency, heaps 16GB to 16TB | Colored Pointers & Load Barriers; Concurrent evacuation | Sub-millisecond pauses (< 1ms) independent of heap size. |\n| **Shenandoah** | `-XX:+UseShenandoahGC` | Low latency, concurrent compaction | Brooks Pointers / Load-Reference Barriers | Millisecond pauses; concurrent evacuation. |",
+                KeyVariables: "-Xms (initial heap), -Xmx (max heap), -Xss (thread stack), -XX:MaxMetaspaceSize, -XX:MaxGCPauseMillis, -XX:+UseG1GC, -XX:+UseZGC",
+                Example: "# Recommended production flags for low-latency microservices:\njava -Xms4g -Xmx4g \\\n     -XX:+UseG1GC \\\n     -XX:MaxGCPauseMillis=100 \\\n     -XX:InitiatingHeapOccupancyPercent=45 \\\n     -XX:+ExplicitGCInvokesConcurrent \\\n     -XX:+PrintGCDetails \\\n     -jar sensei-service.jar"
+            ),
+            (
+                Category: "Java",
+                Title: "Java Concurrency & Thread Synchronization Primitives",
+                Formula: "Happens-Before Order + CAS (Lock-Free) vs Monitor Locks vs AQS Primitives",
+                Description: "### Java Concurrency Primitives & Synchronization Mechanisms\n\n```\n+---------------------------------------------------------------------------+\n|                          SYNCHRONIZATION SPECTRUM                         |\n|                                                                           |\n|  [Lock-Free / Atomic]   --->   [Explicit Locks]   --->   [Coordinators]   |\n|  - volatile                     - ReentrantLock           - CountDownLatch|\n|  - AtomicInteger / CAS          - ReentrantReadWriteLock  - CyclicBarrier |\n|  - LongAdder                    - StampedLock             - Semaphore     |\n|                                 - synchronized monitor    - CompletableFuture\n+---------------------------------------------------------------------------+\n```\n\n### Core Primitives Summary\n1. **`volatile`:**\n   - Guarantees **visibility** (reads/writes bypass CPU L1/L2 caches directly to main memory).\n   - Establishes **happens-before ordering** (inhibits compiler and CPU instruction reordering across memory barriers).\n   - **No atomicity** for compound actions like `count++`.\n2. **`synchronized` (Intrinsic Monitor):**\n   - Built into Java language. Mutual exclusion per object monitor.\n   - Reentrant. Lock escalation: Biased -> Lightweight (CAS spin) -> Heavyweight (OS mutex).\n   - Releases lock automatically on normal exit or exception.\n3. **`ReentrantLock` (AQS-based):**\n   - Explicit lock from `java.util.concurrent.locks`.\n   - Supports `tryLock()`, timed acquisition `tryLock(5, TimeUnit.SECONDS)`, and interruptible locking `lockInterruptibly()`.\n   - Supports multiple conditions via `lock.newCondition()` (`await()`, `signal()`).\n4. **`CountDownLatch` vs `CyclicBarrier`:**\n   - `CountDownLatch`: One-shot latch. Initialized to N. Call `countDown()` to decrement; `await()` blocks until 0. Cannot be reset.\n   - `CyclicBarrier`: Reusable barrier for cyclic algorithms. N threads call `barrier.await()`; trips when all arrive and optionally runs a barrier action.\n5. **`Semaphore`:**\n   - Maintains a set of permits. `acquire()` takes a permit; `release()` returns it. Used for rate-limiting and connection pooling.",
+                KeyVariables: "AQS (AbstractQueuedSynchronizer), CAS (VarHandle / Unsafe), Condition, ReentrantLock(fair), ThreadPoolExecutor",
+                Example: "// Bounded buffer with ReentrantLock and multiple conditions:\nclass BoundedQueue<T> {\n    private final ReentrantLock lock = new ReentrantLock();\n    private final Condition notFull  = lock.newCondition();\n    private final Condition notEmpty = lock.newCondition();\n    private final Object[] items = new Object[100];\n    private int putPtr, takePtr, count;\n\n    public void put(T x) throws InterruptedException {\n        lock.lock();\n        try {\n            while (count == items.length) notFull.await();\n            items[putPtr] = x;\n            if (++putPtr == items.length) putPtr = 0;\n            count++;\n            notEmpty.signal();\n        } finally { lock.unlock(); }\n    }\n}"
+            ),
+            (
+                Category: "Java",
+                Title: "Java 8+ Streams & Functional Programming Cheatsheet",
+                Formula: "Stream = Source -> [Intermediate Operations (Lazy)] -> Terminal Operation (Eager)",
+                Description: "### Java Stream API Architecture & Operations Reference\n\n```\n[ Collection / Array / Generator ]  <-- Source\n               |\n               v\n      [ filter(Predicate) ]         <-- Intermediate (Lazy)\n      [ map(Function) ]             <-- Intermediate (Lazy)\n      [ flatMap(Function) ]         <-- Intermediate (Lazy)\n      [ sorted(Comparator) ]        <-- Intermediate (Stateful, Lazy)\n               |\n               v\n      [ collect(Collector) ]        <-- Terminal (Eager, Consumes Stream)\n```\n\n### Core Functional Interfaces (`java.util.function`)\n- `Predicate<T>`: `boolean test(T t)` — Conditional testing (`p1.and(p2)`, `p1.negate()`).\n- `Function<T, R>`: `R apply(T t)` — Transformation (`f1.andThen(f2)`, `f1.compose(f2)`).\n- `Consumer<T>`: `void accept(T t)` — Side effects (`c1.andThen(c2)`).\n- `Supplier<T>`: `T get()` — Factory / deferred evaluation.\n- `BiFunction<T, U, R>`, `UnaryOperator<T>`, `BinaryOperator<T>`.\n\n### Common Collector Idioms\n| Target | Collector Expression |\n|:---|:---|\n| List | `Collectors.toList()` (mutable) or `Stream.toList()` (Java 16+ immutable) |\n| Set | `Collectors.toSet()` |\n| Map | `Collectors.toMap(User::getId, User::getName, (existing, replacement) -> existing)` |\n| Grouping | `Collectors.groupingBy(Employee::getDepartment)` |\n| Downstream Aggregation | `Collectors.groupingBy(Employee::getDepartment, Collectors.counting())` |\n| Partitioning | `Collectors.partitioningBy(e -> e.getSalary() > 100000)` |\n| String Join | `Collectors.joining(\", \", \"[\", \"]\")` |\n\n### `parallelStream()` Rules of Thumb\n- Powered by `ForkJoinPool.commonPool()`.\n- **Beneficial when:** N * Q > 10,000 (where N = element count, Q = compute cost per element), non-blocking CPU-bound tasks, Spliterators with cheap splitting (e.g. ArrayList vs LinkedList).\n- **Harmful when:** Blocking I/O operations (saturates shared common pool), shared mutable state, small datasets.",
+                KeyVariables: "map, filter, flatMap, reduce, collect, groupingBy, Optional.ofNullable, orElseGet, ForkJoinPool.commonPool()",
+                Example: "// Group transactions by currency and calculate total sum:\nMap<Currency, BigDecimal> totalByCurrency = transactions.stream()\n    .filter(Transaction::isCleared)\n    .collect(Collectors.groupingBy(\n        Transaction::getCurrency,\n        Collectors.reducing(BigDecimal.ZERO, Transaction::getAmount, BigDecimal::add)\n    ));\n\n// FlatMap flatten tags from a list of articles:\nSet<String> distinctTags = articles.stream()\n    .flatMap(a -> a.getTags().stream())\n    .map(String::toLowerCase)\n    .collect(Collectors.toSet());"
+            ),
+            (
+                Category: "Java",
+                Title: "Java OOP & SOLID Principles Architecture Guide",
+                Formula: "SOLID: Single Responsibility | Open-Closed | Liskov Substitution | Interface Segregation | Dependency Inversion",
+                Description: "### The SOLID Principles for Object-Oriented Software Design\n\n```\n+-------------------------------------------------------------------------------+\n|  S  | Single Responsibility  | A class should have one, and only one, reason  |\n|     | Principle              | to change. High cohesion, low coupling.        |\n+-----+------------------------+------------------------------------------------+\n|  O  | Open/Closed Principle  | Open for extension, closed for modification.   |\n|     |                        | Use abstraction, polymorphism & strategies.    |\n+-----+------------------------+------------------------------------------------+\n|  L  | Liskov Substitution    | Subtypes must be substitutable for base types  |\n|     | Principle              | without breaking system correctness.           |\n+-----+------------------------+------------------------------------------------+\n|  I  | Interface Segregation  | Clients should not depend on interfaces they  |\n|     | Principle              | do not use. Prefer small, focused interfaces.  |\n+-----+------------------------+------------------------------------------------+\n|  D  | Dependency Inversion   | Depend on abstractions, not concretions.       |\n|     | Principle              | Inversion of Control & Dependency Injection.   |\n+-----+------------------------+------------------------------------------------+\n```\n\n### Core OOP Principles & Java Specifics\n1. **Encapsulation:** Protect internal object state via `private` fields and validate mutations through accessor/mutator methods or immutable value objects (Java `record`).\n2. **Abstraction:** Expose essential contracts via `interface` and `abstract class` while hiding implementation complexities.\n3. **Inheritance:** Express \"is-a\" taxonomy. Prefer **Composition over Inheritance** to prevent tight coupling and fragile base class bugs.\n4. **Polymorphism:**\n   - *Compile-Time (Overloading):* Static dispatch determined at compile time by argument signatures.\n   - *Runtime (Overriding):* Dynamic dispatch via vtable (`invokevirtual`) determined by actual object type on heap.\n\n### LSP Rules Checklist\n- Subclasses cannot strengthen preconditions (cannot require more restrictive inputs than parent).\n- Subclasses cannot weaken postconditions (must provide at least what parent promised).\n- Subclasses cannot throw broader checked exceptions than superclass methods (can only throw covariant exceptions or subsets).",
+                KeyVariables: "SRP, OCP, LSP, ISP, DIP, Composition over Inheritance, Covariant Return Types, final immutability, Record types",
+                Example: "// SOLID in action: OCP & DIP via Dependency Injection & Strategy Pattern\npublic interface NotificationSender {\n    void send(String recipient, String message);\n}\n\n@Service\npublic class EmailNotificationSender implements NotificationSender {\n    public void send(String to, String msg) { /* SMTP logic */ }\n}\n\npublic class AlertService {\n    private final NotificationSender sender; // Injected abstraction (DIP)\n\n    public AlertService(NotificationSender sender) {\n        this.sender = Objects.requireNonNull(sender);\n    }\n\n    public void triggerAlert(String userId, String alert) {\n        sender.send(userId, alert); // Open for new channels without editing AlertService (OCP)\n    }\n}"
             )
         };
 
         foreach (var f in initialFormulas)
         {
-            _db.ExecuteNonQuery(@"
-                INSERT INTO formula_vault (category, title, formula, description, key_variables, example, created_at)
-                VALUES (@category, @title, @formula, @description, @keyVariables, @example, datetime('now'))
-            ",
-                ("@category", f.Category),
-                ("@title", f.Title),
-                ("@formula", f.Formula),
-                ("@description", f.Description),
-                ("@keyVariables", f.KeyVariables),
-                ("@example", f.Example)
-            );
+            if (!existingTitles.Contains(f.Title))
+            {
+                _db.ExecuteNonQuery(@"
+                    INSERT INTO formula_vault (category, title, formula, description, key_variables, example, created_at)
+                    VALUES (@category, @title, @formula, @description, @keyVariables, @example, datetime('now'))
+                ",
+                    ("@category", f.Category),
+                    ("@title", f.Title),
+                    ("@formula", f.Formula),
+                    ("@description", f.Description),
+                    ("@keyVariables", f.KeyVariables),
+                    ("@example", f.Example)
+                );
+            }
         }
     }
 

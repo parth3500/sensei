@@ -12,6 +12,21 @@ export interface TaskItem {
   doneAt: string | null;
 }
 
+export interface ExtractedTaskItem {
+  title: string;
+  estMin?: number;
+  priority: 'low' | 'medium' | 'high' | string;
+  dueDate?: string;
+  selected?: boolean;
+}
+
+export interface ScanScheduleImageResponse {
+  success: boolean;
+  tasks: ExtractedTaskItem[];
+  source: string;
+  message?: string;
+}
+
 export interface Question {
   id: number;
   subjectId: number | null;

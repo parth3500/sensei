@@ -269,7 +269,7 @@ public class MockTestComponent : IMockTestComponent
             else
             {
                 // GATE marking: +1 for correct, -0.33 for wrong
-                isCorrect = string.Equals(userAns, q.Answer.Trim(), StringComparison.OrdinalIgnoreCase);
+                isCorrect = AnswerEvaluator.IsMatch(q.Answer, userAns, options);
                 if (isCorrect)
                 {
                     correctCount++;

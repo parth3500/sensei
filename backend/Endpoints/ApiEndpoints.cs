@@ -75,6 +75,18 @@ public static class ApiEndpoints
             return deleted ? Results.Ok(new { deleted = true }) : Results.NotFound();
         });
 
+        tasks.MapPost("/scan-image", async (ScanImageRequest req, ITaskComponent taskComp) =>
+        {
+            var result = await taskComp.ScanScheduleImageAsync(req.ImageBase64, req.TargetDate);
+            return Results.Ok(result);
+        });
+
+        tasks.MapPost("/batch", (BatchCreateTasksRequest req, ITaskComponent taskComp) =>
+        {
+            var createdList = taskComp.CreateTasksBatch(req.Tasks ?? new List<TaskCreateRequest>());
+            return Results.Ok(new BatchCreateTasksResponse(createdList.Count, createdList));
+        });
+
         // ── Questions Endpoints ────────────────────────────────
         var questions = app.MapGroup("/api/questions").WithTags("Questions");
 

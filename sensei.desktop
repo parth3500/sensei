@@ -1,0 +1,22 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Sensei Study Engine
+GenericName=AI Study Coach & GATE Platform
+Comment=Personal AI Study Coach & GATE/Engineering Platform
+Exec=/home/parth/prog/sensei/scripts/sensei-linux.sh
+Icon=/home/parth/prog/sensei/frontend/public/icons/icon-512x512.png
+Terminal=false
+Categories=Education;Development;Utility;
+Keywords=study;gate;engineering;flashcards;ai;notes;revision;
+StartupWMClass=Sensei
+MimeType=
+Actions=StopServices;Status;
+
+[Desktop Action StopServices]
+Name=Stop Sensei Background Services
+Exec=/home/parth/prog/sensei/scripts/sensei-linux-stop.sh
+
+[Desktop Action Status]
+Name=Sensei Service Status
+Exec=bash -c "/home/parth/prog/sensei/scripts/sensei-linux.sh --status; echo 'Press Enter to exit...'; read"

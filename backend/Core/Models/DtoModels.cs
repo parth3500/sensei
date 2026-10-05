@@ -22,6 +22,31 @@ public record TaskUpdateRequest(
     int? ActualMin = null
 );
 
+public record ScanImageRequest(string ImageBase64, string? TargetDate = null);
+
+public record ExtractedTaskDto(
+    string Title,
+    int? EstMin = 30,
+    string Priority = "medium",
+    string? DueDate = null
+);
+
+public record ScanScheduleImageResponse(
+    bool Success,
+    List<ExtractedTaskDto> Tasks,
+    string Source,
+    string? Message = null
+);
+
+public record BatchCreateTasksRequest(
+    List<TaskCreateRequest> Tasks
+);
+
+public record BatchCreateTasksResponse(
+    int CreatedCount,
+    List<TaskItem> Tasks
+);
+
 public record AttemptCreateRequest(
     string UserAnswer,
     int TimeSec = 10,

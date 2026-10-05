@@ -81,54 +81,9 @@ public class PracticeComponent : IPracticeComponent
         if (question == null)
             throw new ArgumentException($"Question {questionId} does not exist.");
 
-        // Compare answer (letter, stripped text, or exact match)
-        string expected = question.Answer.Trim();
-        string actual = (request.UserAnswer ?? "").Trim();
-        bool isCorrect = string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
-
-        if (!isCorrect)
-        {
-            try
-            {
-                var options = JsonSerializer.Deserialize<List<string>>(question.OptionsJson ?? "[]");
-                if (options != null && options.Count > 0)
-                {
-                    // If expected is A, B, C, D...
-                    if (expected.Length == 1 && char.IsLetter(expected[0]))
-                    {
-                        int idx = char.ToUpperInvariant(expected[0]) - 'A';
-                        if (idx >= 0 && idx < options.Count)
-                        {
-                            if (string.Equals(options[idx].Trim(), actual, StringComparison.OrdinalIgnoreCase))
-                                isCorrect = true;
-                        }
-                    }
-
-                    // If actual is A, B, C, D...
-                    if (!isCorrect && actual.Length == 1 && char.IsLetter(actual[0]))
-                    {
-                        int idx = char.ToUpperInvariant(actual[0]) - 'A';
-                        if (idx >= 0 && idx < options.Count)
-                        {
-                            if (string.Equals(options[idx].Trim(), expected, StringComparison.OrdinalIgnoreCase))
-                                isCorrect = true;
-                        }
-                    }
-
-                    // If option has prefix like "A) " or "1. "
-                    if (!isCorrect)
-                    {
-                        string Clean(string s) => Regex.Replace(s, @"^[A-Da-d0-9][\)\.\:\-]\s*", "").Trim();
-                        if (string.Equals(Clean(expected), Clean(actual), StringComparison.OrdinalIgnoreCase))
-                            isCorrect = true;
-                    }
-                }
-            }
-            catch
-            {
-                // Fallback to strict comparison
-            }
-        }
+        // Compare answer using resilient, comprehensive matching
+        var options = AnswerEvaluator.ParseOptions(question.OptionsJson);
+        bool isCorrect = AnswerEvaluator.IsMatch(question.Answer, request.UserAnswer, options);
 
         // Update SM-2 parameters factoring in user confidence
         var (newEase, newInterval, newReps, nextDueDate) = _sr.CalculateNextReview(
@@ -147,12 +102,13 @@ public class PracticeComponent : IPracticeComponent
         );
 
         // Insert attempt
+        string safeUserAnswer = request.UserAnswer ?? string.Empty;
         long attemptId = _db.InsertAndGetId(@"
             INSERT INTO attempts (question_id, user_answer, correct, time_sec, confidence, notes, created_at)
             VALUES (@qId, @ans, @correct, @timeSec, @confidence, @notes, datetime('now'))
         ",
             ("@qId", questionId),
-            ("@ans", request.UserAnswer),
+            ("@ans", safeUserAnswer),
             ("@correct", isCorrect),
             ("@timeSec", request.TimeSec),
             ("@confidence", request.Confidence),
@@ -163,7 +119,7 @@ public class PracticeComponent : IPracticeComponent
         {
             Id = (int)attemptId,
             QuestionId = questionId,
-            UserAnswer = request.UserAnswer,
+            UserAnswer = safeUserAnswer,
             Correct = isCorrect,
             TimeSec = request.TimeSec,
             Confidence = request.Confidence,

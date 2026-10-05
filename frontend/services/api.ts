@@ -29,6 +29,8 @@ import {
   CreateDeckRequest,
   CreateFlashcardRequest,
   FlashcardDeckStats,
+  ExtractedTaskItem,
+  ScanScheduleImageResponse,
 } from '@/types';
 
 
@@ -100,6 +102,20 @@ export const api = {
 
   async deleteTask(id: number): Promise<void> {
     await fetchJson(`${API_BASE}/tasks/${id}`, { method: 'DELETE' });
+  },
+
+  async batchCreateTasks(tasks: Array<{ title: string; priority?: string; dueDate?: string; estMin?: number }>): Promise<{ createdCount: number; tasks: TaskItem[] }> {
+    return fetchJson(`${API_BASE}/tasks/batch`, {
+      method: 'POST',
+      body: JSON.stringify({ tasks }),
+    });
+  },
+
+  async scanScheduleImage(imageBase64: string, targetDate?: string): Promise<ScanScheduleImageResponse> {
+    return fetchJson(`${API_BASE}/tasks/scan-image`, {
+      method: 'POST',
+      body: JSON.stringify({ imageBase64, targetDate }),
+    });
   },
 
   // Questions

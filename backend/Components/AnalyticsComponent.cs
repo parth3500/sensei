@@ -240,7 +240,7 @@ public class AnalyticsComponent : IAnalyticsComponent
         var notesMinRow = _db.QuerySingle("SELECT COALESCE(SUM(actual_min), 0) as m FROM tasks WHERE title LIKE '%Note%' OR title LIKE '%Revision%'");
         int notesMin = notesMinRow != null && notesMinRow["m"] != null ? Convert.ToInt32(notesMinRow["m"]) : 0;
 
-        var mockSecRow = _db.QuerySingle("SELECT COALESCE(SUM(time_taken_sec), 0) as s FROM mock_test_sessions");
+        var mockSecRow = _db.QuerySingle("SELECT COALESCE(SUM(time_spent_sec), 0) as s FROM mock_test_sessions");
         int mockMin = mockSecRow != null && mockSecRow["s"] != null ? Convert.ToInt32(mockSecRow["s"]) / 60 : 0;
 
         var timeSpent = new List<TimeSpentMetric>
