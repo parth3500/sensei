@@ -3,6 +3,9 @@
       "target": {
         "namespace": "android_app",
         "package_name": "app.railway.sensei",
-        "sha256_cert_fingerprints": ["88:72:9A:B0:DD:58:94:AC:D8:64:11:A1:E7:F0:42:60:71:E0:5A:63:4B:40:12:85:8B:8E:AE:A5:57:91:54:F6"]
-      }
-    }]
+        "sha256_cert_fingerprints": [
+        "88:72:9A:B0:DD:58:94:AC:D8:64:11:A1:E7:F0:42:60:71:E0:5A:63:4B:40:12:85:8B:8E:AE:A5:57:91:54:F6",
+        "51:D1:90:A3:08:D8:7C:60:8B:B7:22:8B:AA:DB:8F:8A:A8:2C:A6:C9:FD:49:9E:D4:8A:1B:68:DD:1D:52:DD:89"
+      ]
+    }
+  }]

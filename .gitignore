@@ -42,5 +42,7 @@ yarn-error.log*
 # Internal logs and run state
 *.log
 *.apk
+!Sensei.apk
+!frontend/public/Sensei.apk
 .run/
 
