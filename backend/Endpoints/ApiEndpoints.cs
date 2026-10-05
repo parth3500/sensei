@@ -496,7 +496,14 @@ public static class ApiEndpoints
             return result != null ? Results.Ok(result) : Results.NotFound(new { error = $"Session {sessionId} result not found or pending." });
         });
 
-        // ── Health Check ───────────────────────────────────────
+        // ── Health Check & Root Info ───────────────────────────
+        app.MapGet("/", () => Results.Ok(new {
+            service = "Sensei Backend API",
+            status = "ok",
+            version = "1.0.0",
+            runtime = ".NET 8 Web API",
+            frontend = "https://frontend-production-6936.up.railway.app"
+        }));
         app.MapGet("/health", () => Results.Ok(new { status = "ok", version = "1.0.0", runtime = ".NET 8 Web API" }));
         app.MapGet("/api/health", () => Results.Ok(new { status = "ok", version = "1.0.0", runtime = ".NET 8 Web API" }));
     }
